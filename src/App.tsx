@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Dashboard } from './components/Dashboard';
 import { TechnicianManagement } from './components/TechnicianManagement';
+import { UserProfile } from './components/UserProfile';
+import { AccountSettings } from './components/AccountSettings';
 import { Modal } from './components/Modal';
 import { SettingsModal } from './components/SettingsModal';
 import { 
@@ -67,7 +69,7 @@ export default function App() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [view, setView] = useState<'list' | 'dashboard' | 'technicians'>('list');
+  const [view, setView] = useState<'list' | 'dashboard' | 'technicians' | 'profile' | 'account-settings'>('list');
   const [isLoadingTickets, setIsLoadingTickets] = useState(false);
   const [isLoadingActivities, setIsLoadingActivities] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -720,12 +722,22 @@ export default function App() {
             
             {/* Settings Button */}
             <button 
-              onClick={() => setIsSettingsOpen(true)}
-              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-500 dark:text-gray-400"
-              title="Settings"
+              onClick={() => setView('profile')}
+              className={`p-2 rounded-full transition-colors ${view === 'profile' ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400' : 'hover:bg-gray-100 text-gray-500 dark:text-gray-400 dark:hover:bg-gray-800'}`}
+              title="Profile"
             >
-              <Settings className="w-5 h-5" />
+              <UserIcon className="w-5 h-5" />
             </button>
+
+            {currentUser.role === 'lead' && (
+              <button 
+                onClick={() => setView('account-settings')}
+                className={`p-2 rounded-full transition-colors ${view === 'account-settings' ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400' : 'hover:bg-gray-100 text-gray-500 dark:text-gray-400 dark:hover:bg-gray-800'}`}
+                title="Account Settings"
+              >
+                <Settings className="w-5 h-5" />
+              </button>
+            )}
 
             {/* Notification Bell */}
             <div className="relative">
@@ -817,7 +829,11 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
-        {view === 'technicians' && currentUser.role === 'lead' ? (
+        {view === 'profile' ? (
+          <UserProfile user={currentUser} onUpdate={(updated) => setCurrentUser(updated)} />
+        ) : view === 'account-settings' && currentUser.role === 'lead' ? (
+          <AccountSettings currentUser={currentUser} />
+        ) : view === 'technicians' && currentUser.role === 'lead' ? (
           <TechnicianManagement users={users} />
         ) : view === 'dashboard' && (currentUser.role === 'lead' || currentUser.role === 'technician') ? (
           <Dashboard 

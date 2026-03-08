@@ -99,7 +99,8 @@ router.get("/users/:id", async (req, res) => {
     const profileData: any = {
       id: user.id,
       name: user.user_metadata?.name || user.email?.split('@')[0] || "New User",
-      role: user.user_metadata?.role || "user"
+      role: user.user_metadata?.role || "user",
+      email: user.email
     };
     const { data: newProfile, error: insertError } = await supabase.from("users").insert([profileData]).select().single();
     if (insertError) return res.status(500).json({ error: "Failed to auto-create user profile." });
@@ -107,6 +108,45 @@ router.get("/users/:id", async (req, res) => {
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "An unexpected error occurred" });
   }
+});
+
+router.patch("/users/:id", async (req, res) => {
+  const { id } = req.params;
+  const { name, role } = req.body;
+  
+  const updateData: any = {};
+  if (name !== undefined) updateData.name = name;
+  if (role !== undefined) updateData.role = role;
+
+  const { data, error } = await supabase
+    .from("users")
+    .update(updateData)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  // If role was updated to technician, ensure they are in the technicians table
+  if (role === 'technician') {
+    await supabase.from("technicians").upsert([{ id, status: 'active' }]);
+  }
+
+  res.json(data);
+});
+
+router.post("/users/:id/reset-password", async (req, res) => {
+  const { id } = req.params;
+  const { email } = req.body;
+  
+  if (!email) return res.status(400).json({ error: "Email is required" });
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${process.env.APP_URL || 'http://localhost:3000'}/reset-password`,
+  });
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ message: "Password reset email sent" });
 });
 
 router.get("/tickets", async (req, res) => {

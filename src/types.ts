@@ -4,6 +4,7 @@ export interface User {
   id: string;
   name: string;
   role: Role;
+  email?: string;
 }
 
 export type TicketCategory = 'laptop' | 'connectivity' | 'printer' | 'software' | 'desktop' | 'other';
