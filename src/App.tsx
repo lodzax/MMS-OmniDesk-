@@ -155,13 +155,15 @@ export default function App() {
   const fetchUserProfile = async (userId: string) => {
     try {
       const response = await fetch(`/api/users/${userId}`);
+      const contentType = response.headers.get('content-type');
+      
+      if (contentType && contentType.includes('text/html')) {
+        const text = await response.text();
+        console.error('Received HTML instead of JSON:', text.substring(0, 200));
+        throw new Error('Server returned HTML instead of JSON. This usually means the API route is missing and falling back to index.html.');
+      }
+
       if (!response.ok) {
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('text/html')) {
-          const text = await response.text();
-          console.error('Received HTML instead of JSON:', text.substring(0, 200));
-          throw new Error('Server returned HTML instead of JSON. Check API configuration.');
-        }
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to fetch profile');
       }
