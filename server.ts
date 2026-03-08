@@ -55,6 +55,9 @@ function sendNotification(userId: string, notification: any) {
 const app = express();
 app.use(express.json());
 
+// Health check for Netlify deployment
+app.get("/api/health", (req, res) => res.json({ status: "ok", environment: process.env.NETLIFY ? "netlify" : "local" }));
+
 const PORT = 3000;
 
 app.get("/api/seed", async (req, res) => {
@@ -571,36 +574,7 @@ app.patch("/api/notifications/:id/read", async (req, res) => {
   res.json({ success: true });
 });
 
-export async function startServer() {
-  // NOTE: WebSockets are not supported on standard Netlify Functions.
-  // Real-time features will only work in local development or on a persistent server.
-  const server = createServer(app);
-  const wss = new WebSocketServer({ server });
-
-  wss.on("connection", (ws) => {
-    let currentUserId: string | null = null;
-
-    ws.on("message", (message) => {
-      try {
-        const data = JSON.parse(message.toString());
-        if (data.type === "auth" && data.userId) {
-          currentUserId = data.userId;
-          userConnections.set(currentUserId, ws);
-          console.log(`User connected: ${currentUserId}`);
-        }
-      } catch (e) {
-        console.error("WS message error:", e);
-      }
-    });
-
-    ws.on("close", () => {
-      if (currentUserId) {
-        userConnections.delete(currentUserId);
-        console.log(`User disconnected: ${currentUserId}`);
-      }
-    });
-  });
-
+// Move these routes OUTSIDE of startServer so they are available in serverless environment
 app.post("/api/tickets/bulk-status", async (req, res) => {
   const { ticketIds, status, user_id } = req.body;
   if (!Array.isArray(ticketIds) || !status) {
@@ -647,10 +621,45 @@ app.post("/api/tickets/bulk-delete", async (req, res) => {
   res.json({ success: true });
 });
 
-  // Error handling middleware for API routes
-  app.use("/api", (err: any, req: any, res: any, next: any) => {
-    console.error("API Error:", err);
-    res.status(500).json({ error: err.message || "Internal Server Error" });
+// Error handling middleware for API routes
+app.use("/api", (err: any, req: any, res: any, next: any) => {
+  console.error("API Error:", err);
+  res.status(500).json({ error: err.message || "Internal Server Error" });
+});
+
+// API 404 handler to ensure we return JSON instead of HTML for missing API routes
+app.use("/api/*", (req, res) => {
+  res.status(404).json({ error: `API route not found: ${req.originalUrl}` });
+});
+
+export async function startServer() {
+  // NOTE: WebSockets are not supported on standard Netlify Functions.
+  // Real-time features will only work in local development or on a persistent server.
+  const server = createServer(app);
+  const wss = new WebSocketServer({ server });
+
+  wss.on("connection", (ws) => {
+    let currentUserId: string | null = null;
+
+    ws.on("message", (message) => {
+      try {
+        const data = JSON.parse(message.toString());
+        if (data.type === "auth" && data.userId) {
+          currentUserId = data.userId;
+          userConnections.set(currentUserId, ws);
+          console.log(`User connected: ${currentUserId}`);
+        }
+      } catch (e) {
+        console.error("WS message error:", e);
+      }
+    });
+
+    ws.on("close", () => {
+      if (currentUserId) {
+        userConnections.delete(currentUserId);
+        console.log(`User disconnected: ${currentUserId}`);
+      }
+    });
   });
 
   if (process.env.NODE_ENV !== "production" && !process.env.NETLIFY) {

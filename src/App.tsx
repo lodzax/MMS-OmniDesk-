@@ -156,6 +156,12 @@ export default function App() {
     try {
       const response = await fetch(`/api/users/${userId}`);
       if (!response.ok) {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('text/html')) {
+          const text = await response.text();
+          console.error('Received HTML instead of JSON:', text.substring(0, 200));
+          throw new Error('Server returned HTML instead of JSON. Check API configuration.');
+        }
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to fetch profile');
       }
