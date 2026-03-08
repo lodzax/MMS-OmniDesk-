@@ -8,7 +8,6 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  format = "esm"
   external_node_modules = ["vite", "lightningcss", "esbuild"]
 
 [[redirects]]

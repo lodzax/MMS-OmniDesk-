@@ -6,8 +6,15 @@ import { createServer } from "http";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+let __filename = "";
+let __dirname = "";
+try {
+  __filename = fileURLToPath(import.meta.url);
+  __dirname = path.dirname(__filename);
+} catch (e) {
+  // Fallback for CJS if bundled that way
+  __dirname = process.cwd();
+}
 
 // Supabase Configuration
 const supabaseUrl = process.env.SUPABASE_URL || "https://byixlfiypxnbfehesibl.supabase.co";
