@@ -1,4 +1,4 @@
-export type Role = 'user' | 'lead' | 'technician';
+export type Role = 'end_user' | 'technician' | 'it_lead' | 'admin';
 
 export interface User {
   id: string;
@@ -26,6 +26,7 @@ export interface Ticket {
   creator_name: string;
   requester_name: string;
   technician_name: string | null;
+  is_escalated: boolean;
 }
 
 export interface Activity {
@@ -44,7 +45,7 @@ export interface Technician {
   name: string;
   specialty: string;
   phone: string;
-  status: 'active' | 'inactive' | 'on-leave';
+  status: 'available' | 'busy' | 'offline';
   created_at: string;
 }
 

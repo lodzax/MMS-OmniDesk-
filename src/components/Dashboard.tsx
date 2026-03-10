@@ -46,8 +46,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const completed = tickets.filter(t => t.status === 'completed').length;
     const acknowledged = tickets.filter(t => t.status === 'acknowledged').length;
     const pending = tickets.filter(t => t.status === 'open' || t.status === 'assigned').length;
+    const escalated = tickets.filter(t => t.is_escalated).length;
     
-    return { total, completed, acknowledged, pending };
+    return { total, completed, acknowledged, pending, escalated };
   }, [tickets]);
 
   const categoryData = useMemo(() => {
@@ -290,6 +291,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
           trend="-2%" 
           trendUp={false}
         />
+        <MetricCard 
+          title="Escalated" 
+          value={metrics.escalated} 
+          icon={AlertCircle} 
+          color="rose" 
+          trend="+4%" 
+          trendUp={true}
+        />
       </div>
 
       {/* Charts Grid */}
@@ -402,6 +411,7 @@ const MetricCard = ({ title, value, icon: Icon, color, trend, trendUp }: any) =>
     amber: 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-900/30',
     emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-900/30',
     blue: 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-900/30',
+    rose: 'bg-rose-50 text-rose-600 border-rose-100 dark:bg-rose-900/20 dark:text-rose-400 dark:border-rose-900/30',
   };
 
   return (

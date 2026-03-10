@@ -69,7 +69,7 @@ export default function App() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [view, setView] = useState<'list' | 'dashboard' | 'technicians' | 'profile' | 'account-settings'>('list');
+  const [view, setView] = useState<'list' | 'dashboard' | 'technicians' | 'profile' | 'account-settings'>('profile');
   const [isLoadingTickets, setIsLoadingTickets] = useState(false);
   const [isLoadingActivities, setIsLoadingActivities] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -108,11 +108,11 @@ export default function App() {
       const isRequester = t.requested_for === currentUser.id;
       const isAssigned = t.assigned_to === currentUser.id;
 
+      // Role-based visibility: IT Leads and Technicians see all tickets.
+      // Regular users only see tickets they created or were requested for.
       let hasAccess = false;
-      if (currentUser.role === 'lead') {
-        hasAccess = true; // Leads see everything
-      } else if (currentUser.role === 'technician') {
-        hasAccess = isAssigned || isCreator || isRequester;
+      if (currentUser.role === 'it_lead' || currentUser.role === 'admin' || currentUser.role === 'technician') {
+        hasAccess = true;
       } else {
         hasAccess = isCreator || isRequester;
       }
@@ -231,11 +231,15 @@ export default function App() {
     setIsLoadingTickets(true);
     try {
       const response = await fetch('/api/tickets');
-      if (!response.ok) throw new Error('Failed to fetch tickets');
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Server error (${response.status}): ${errorText.substring(0, 100)}`);
+      }
       const data = await response.json();
       setTickets(data);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching tickets:', err);
+      // Don't show alert for background fetches to avoid spamming
     } finally {
       setIsLoadingTickets(false);
     }
@@ -258,10 +262,13 @@ export default function App() {
   const fetchNotifications = async (userId: string) => {
     try {
       const response = await fetch(`/api/notifications/${userId}`);
-      if (!response.ok) throw new Error('Failed to fetch notifications');
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Server error (${response.status}): ${errorText.substring(0, 100)}`);
+      }
       const data = await response.json();
       setNotifications(data || []);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching notifications:', err);
     }
   };
@@ -327,15 +334,21 @@ export default function App() {
 
   const handleAssign = async (ticketId: string, technicianId: string) => {
     if (!currentUser) return;
+    console.log(`Frontend: Assigning ticket ${ticketId} to technician ${technicianId}`);
 
     const tech = users.find(u => u.id === technicianId);
+    if (!tech) {
+      console.error(`Technician with ID ${technicianId} not found in users list.`);
+    }
+    
+    const isReassignment = !!selectedTicket?.assigned_to;
     
     setConfirmModal({
       isOpen: true,
-      title: 'Confirm Assignment',
-      message: `Are you sure you want to assign this ticket to ${tech?.name}? They will be notified immediately.`,
+      title: isReassignment ? 'Confirm Re-assignment' : 'Confirm Assignment',
+      message: `Are you sure you want to ${isReassignment ? 're-assign' : 'assign'} this ticket to ${tech?.name}? They will be notified immediately.`,
       type: 'info',
-      confirmText: 'Assign Ticket',
+      confirmText: isReassignment ? 'Re-assign Ticket' : 'Assign Ticket',
       onConfirm: async () => {
         try {
           const response = await fetch(`/api/tickets/${ticketId}/assign`, {
@@ -530,6 +543,60 @@ export default function App() {
     }
   };
 
+  const handleEscalate = async (ticketId: string) => {
+    if (!currentUser) return;
+    
+    const reason = prompt("Please provide a reason for escalation (optional):") || "Unresolved for too long";
+    
+    setConfirmModal({
+      isOpen: true,
+      title: 'Confirm Escalation',
+      message: 'Are you sure you want to escalate this ticket? IT Leads will be notified immediately.',
+      type: 'warning',
+      confirmText: 'Escalate Ticket',
+      onConfirm: async () => {
+        try {
+          const response = await fetch(`/api/tickets/${ticketId}/escalate`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id: currentUser.id,
+              reason
+            })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to escalate ticket');
+          }
+
+          fetchTickets();
+          fetchActivities(ticketId);
+          if (selectedTicket?.id === ticketId) {
+            setSelectedTicket(prev => prev ? { ...prev, is_escalated: true, priority: 'high' } : null);
+          }
+        } catch (err: any) {
+          console.error('Error escalating ticket:', err);
+          alert(`Error: ${err.message}`);
+        }
+      }
+    });
+  };
+
+  const canEscalate = (ticket: Ticket) => {
+    if (!currentUser) return false;
+    if (ticket.is_escalated) return false;
+    if (ticket.status === 'completed' || ticket.status === 'acknowledged') return false;
+    
+    if (currentUser.role === 'it_lead' || currentUser.role === 'admin') return true;
+    
+    const createdDate = new Date(ticket.created_at);
+    const now = new Date();
+    const diffHours = (now.getTime() - createdDate.getTime()) / (1000 * 60 * 60);
+    
+    return diffHours >= 24;
+  };
+
   const handleUpdateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser || !selectedTicket) return;
@@ -610,6 +677,7 @@ export default function App() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setCurrentUser(null);
+    setView('list');
   };
 
   if (isAuthLoading) {
@@ -621,14 +689,17 @@ export default function App() {
   }
 
   if (!currentUser) {
-    return <Auth onAuthSuccess={(user) => setCurrentUser(user)} />;
+    return <Auth onAuthSuccess={(user) => {
+      setCurrentUser(user);
+      setView('list');
+    }} />;
   }
 
   return (
     <div className="min-h-screen bg-[#F5F5F7] text-[#1D1D1F] font-sans transition-colors duration-300">
       {/* Bulk Action Bar */}
       <AnimatePresence>
-        {selectedTicketIds.length > 0 && (
+        {selectedTicketIds.length > 0 && (currentUser.role === 'it_lead' || currentUser.role === 'admin' || currentUser.role === 'technician') && (
           <motion.div 
             initial={{ opacity: 0, y: 50 }}
             animate={{ opacity: 1, y: 0 }}
@@ -692,7 +763,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
-            {currentUser && (currentUser.role === 'lead' || currentUser.role === 'technician') && (
+            {currentUser && (
               <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700">
                 <button 
                   onClick={() => setView('list')}
@@ -701,14 +772,16 @@ export default function App() {
                   <List className="w-3.5 h-3.5" />
                   Tickets
                 </button>
-                <button 
-                  onClick={() => setView('dashboard')}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${view === 'dashboard' ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-indigo-400' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
-                >
-                  <LayoutDashboard className="w-3.5 h-3.5" />
-                  Dashboard
-                </button>
-                {currentUser.role === 'lead' && (
+                {currentUser.role !== 'end_user' && (
+                  <button 
+                    onClick={() => setView('dashboard')}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${view === 'dashboard' ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-indigo-400' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                  >
+                    <LayoutDashboard className="w-3.5 h-3.5" />
+                    Dashboard
+                  </button>
+                )}
+                {(currentUser.role === 'it_lead' || currentUser.role === 'admin' || currentUser.role === 'technician') && (
                   <button 
                     onClick={() => setView('technicians')}
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${view === 'technicians' ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-indigo-400' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
@@ -729,7 +802,7 @@ export default function App() {
               <UserIcon className="w-5 h-5" />
             </button>
 
-            {currentUser.role === 'lead' && (
+            {(currentUser.role === 'it_lead' || currentUser.role === 'admin') && (
               <button 
                 onClick={() => setView('account-settings')}
                 className={`p-2 rounded-full transition-colors ${view === 'account-settings' ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400' : 'hover:bg-gray-100 text-gray-500 dark:text-gray-400 dark:hover:bg-gray-800'}`}
@@ -814,7 +887,7 @@ export default function App() {
               </div>
               <div className="flex flex-col">
                 <span className="text-xs font-medium leading-none dark:text-gray-200">{currentUser.name}</span>
-                <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold dark:text-gray-500">{currentUser.role}</span>
+                <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold dark:text-gray-500">{currentUser.role.replace('_', ' ')}</span>
               </div>
               <button 
                 onClick={handleLogout}
@@ -830,12 +903,12 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         {view === 'profile' ? (
-          <UserProfile user={currentUser} onUpdate={(updated) => setCurrentUser(updated)} />
-        ) : view === 'account-settings' && currentUser.role === 'lead' ? (
+          <UserProfile user={currentUser} onUpdate={(updated) => setCurrentUser(updated)} onBack={() => setView('list')} />
+        ) : view === 'account-settings' && (currentUser.role === 'it_lead' || currentUser.role === 'admin') ? (
           <AccountSettings currentUser={currentUser} />
-        ) : view === 'technicians' && currentUser.role === 'lead' ? (
-          <TechnicianManagement users={users} />
-        ) : view === 'dashboard' && (currentUser.role === 'lead' || currentUser.role === 'technician') ? (
+        ) : view === 'technicians' && (currentUser.role === 'it_lead' || currentUser.role === 'admin' || currentUser.role === 'technician') ? (
+          <TechnicianManagement users={users} currentUser={currentUser} />
+        ) : view === 'dashboard' && currentUser.role !== 'end_user' ? (
           <Dashboard 
             tickets={tickets} 
             onFilterStatus={setStatusFilter}
@@ -934,7 +1007,7 @@ export default function App() {
               </div>
             </div>
 
-            {filteredTickets.length > 0 && (
+            {filteredTickets.length > 0 && (currentUser.role === 'it_lead' || currentUser.role === 'admin' || currentUser.role === 'technician') && (
               <div className="flex items-center gap-2 px-1 py-1">
                 <input 
                   type="checkbox" 
@@ -983,19 +1056,21 @@ export default function App() {
                     )}
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex items-center gap-2">
-                        <input 
-                          type="checkbox" 
-                          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-700"
-                          checked={selectedTicketIds.includes(ticket.id)}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedTicketIds(prev => [...prev, ticket.id]);
-                            } else {
-                              setSelectedTicketIds(prev => prev.filter(id => id !== ticket.id));
-                            }
-                          }}
-                        />
+                        {(currentUser.role === 'it_lead' || currentUser.role === 'admin' || currentUser.role === 'technician') && (
+                          <input 
+                            type="checkbox" 
+                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-700"
+                            checked={selectedTicketIds.includes(ticket.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedTicketIds(prev => [...prev, ticket.id]);
+                              } else {
+                                setSelectedTicketIds(prev => prev.filter(id => id !== ticket.id));
+                              }
+                            }}
+                          />
+                        )}
                         <div className="flex gap-1.5">
                           <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border ${getStatusColor(ticket.status)}`}>
                             {ticket.status}
@@ -1003,6 +1078,12 @@ export default function App() {
                           <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border ${getPriorityColor(ticket.priority)}`}>
                             {ticket.priority}
                           </span>
+                          {ticket.is_escalated && (
+                            <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border border-red-600 bg-red-600 text-white flex items-center gap-1">
+                              <AlertCircle className="w-2.5 h-2.5" />
+                              Escalated
+                            </span>
+                          )}
                         </div>
                       </div>
                       <span className="text-[10px] text-gray-400 font-mono dark:text-gray-500">#{ticket.id}</span>
@@ -1084,7 +1165,7 @@ export default function App() {
                           >
                             <option value="">Myself ({currentUser.name})</option>
                             {users.filter(u => u.id !== currentUser.id).map(u => (
-                              <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                              <option key={u.id} value={u.id}>{u.name} ({u.role.replace('_', ' ')})</option>
                             ))}
                           </select>
                           <p className="text-[10px] text-gray-400 mt-1 dark:text-gray-500">Select another user if you are creating this ticket on their behalf.</p>
@@ -1206,7 +1287,7 @@ export default function App() {
                               onChange={e => setEditForm({ ...editForm, requested_for: e.target.value })}
                             >
                               {users.map(u => (
-                                <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                                <option key={u.id} value={u.id}>{u.name} ({u.role.replace('_', ' ')})</option>
                               ))}
                             </select>
                           </div>
@@ -1257,6 +1338,12 @@ export default function App() {
                           <span className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border ${getPriorityColor(selectedTicket.priority)}`}>
                             {selectedTicket.priority}
                           </span>
+                          {selectedTicket.is_escalated && (
+                            <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border border-red-600 bg-red-600 text-white flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" />
+                              Escalated
+                            </span>
+                          )}
                           <span className="text-xs text-gray-400 font-mono dark:text-gray-500">#{selectedTicket.id}</span>
                         </div>
                         <h2 className="text-2xl font-bold tracking-tight mb-2 dark:text-white">{selectedTicket.title}</h2>
@@ -1285,8 +1372,8 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Lead/Creator Controls: Edit */}
-                      {(currentUser.role === 'lead' || currentUser.id === selectedTicket.created_by) && !isEditingDetail && (
+                      {/* Lead/Technician/Creator Controls: Edit */}
+                      {(currentUser.role === 'it_lead' || currentUser.role === 'admin' || currentUser.role === 'technician' || currentUser.id === selectedTicket.created_by) && !isEditingDetail && (
                         <button 
                           onClick={() => {
                             setEditForm({
@@ -1306,7 +1393,7 @@ export default function App() {
                       )}
 
                       {/* Lead/Technician Controls: Assign */}
-                      {currentUser.role === 'lead' && (selectedTicket.status === 'open' || selectedTicket.status === 'assigned') && (
+                      {(currentUser.role === 'it_lead' || currentUser.role === 'admin' || currentUser.role === 'technician') && (selectedTicket.status === 'open' || selectedTicket.status === 'assigned' || selectedTicket.status === 'acknowledged') && (
                         <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 dark:bg-indigo-900/10 dark:border-indigo-900/30">
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-indigo-600 mb-2 dark:text-indigo-400">
                             {selectedTicket.assigned_to ? 'Re-assign Technician' : 'Assign Technician'}
@@ -1318,8 +1405,8 @@ export default function App() {
                               value={selectedTicket.assigned_to || ""}
                             >
                               <option value="" disabled>Select Tech</option>
-                              {users.filter(u => u.role === 'technician' || u.role === 'lead').map(u => (
-                                <option key={u.id} value={u.id}>{u.name} ({u.role.toUpperCase()})</option>
+                              {users.filter(u => u.role === 'technician' || u.role === 'it_lead' || u.role === 'admin').map(u => (
+                                <option key={u.id} value={u.id}>{u.name} ({u.role.replace('_', ' ').toUpperCase()})</option>
                               ))}
                             </select>
                           </div>
@@ -1361,7 +1448,7 @@ export default function App() {
               {!isEditingDetail && (
                 <>
                   {/* Technician Controls: Work Log */}
-                  {(currentUser.role === 'lead' || (currentUser.role === 'technician' && selectedTicket.assigned_to === currentUser.id)) && (selectedTicket.status === 'assigned' || selectedTicket.status === 'completed') && (
+                  {(currentUser.role === 'it_lead' || currentUser.role === 'admin' || selectedTicket.assigned_to === currentUser.id) && (
                     <motion.div 
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -1409,32 +1496,58 @@ export default function App() {
                             Mark as Fixed
                           </button>
                         </div>
+                        
+                        {/* Escalation Button */}
+                        {canEscalate(selectedTicket) && (
+                          <button 
+                            onClick={() => handleEscalate(selectedTicket.id)}
+                            className="w-full mt-2 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-red-200 text-red-600 text-sm font-bold hover:bg-red-50 transition-all dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/20"
+                          >
+                            <AlertCircle className="w-4 h-4" />
+                            Escalate Ticket
+                          </button>
+                        )}
+                        
+                        {selectedTicket.is_escalated && (
+                          <div className="mt-2 p-3 bg-red-50 rounded-xl border border-red-100 flex items-center gap-2 dark:bg-red-900/10 dark:border-red-900/30">
+                            <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+                            <span className="text-xs font-bold text-red-700 dark:text-red-300">This ticket has been escalated.</span>
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   )}
 
-                  {/* User Controls: Acknowledge */}
-                  {(currentUser.role === 'lead' || (selectedTicket.created_by === currentUser.id || selectedTicket.requested_for === currentUser.id)) && selectedTicket.status === 'completed' && (
+                  {/* User Controls: Acknowledge / Re-open */}
+                  {(currentUser.role === 'it_lead' || currentUser.role === 'admin' || (selectedTicket.created_by === currentUser.id || selectedTicket.requested_for === currentUser.id)) && selectedTicket.status === 'completed' && (
                     <motion.div 
                       initial={{ opacity: 0, scale: 0.98 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      className="bg-green-50 rounded-3xl border border-green-200 p-8 shadow-sm"
+                      className="bg-green-50 rounded-3xl border border-green-200 p-8 shadow-sm dark:bg-green-900/10 dark:border-green-900/30"
                     >
-                      <div className="flex items-center gap-4 mb-4">
-                        <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
-                          <CheckCircle2 className="w-6 h-6 text-green-600" />
+                      <div className="flex items-center gap-4 mb-6">
+                        <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center dark:bg-green-900/40">
+                          <CheckCircle2 className="w-6 h-6 text-green-600 dark:text-green-400" />
                         </div>
                         <div>
-                          <h3 className="text-lg font-bold text-green-900">Problem Resolved</h3>
-                          <p className="text-sm text-green-700">The technician has marked this issue as fixed. Please review the log and acknowledge.</p>
+                          <h3 className="text-lg font-bold text-green-900 dark:text-green-300">Problem Resolved?</h3>
+                          <p className="text-sm text-green-700 dark:text-green-400/80">The technician has marked this issue as fixed. Please review the resolution and acknowledge if you are satisfied.</p>
                         </div>
                       </div>
-                      <button 
-                        onClick={() => handleAcknowledge(selectedTicket.id)}
-                        className="w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-200"
-                      >
-                        Acknowledge Resolution
-                      </button>
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <button 
+                          onClick={() => handleAcknowledge(selectedTicket.id)}
+                          className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-200 dark:shadow-none"
+                        >
+                          Acknowledge Resolution
+                        </button>
+                        <button 
+                          onClick={() => handleStatusUpdate(selectedTicket.id, 'assigned')}
+                          className="flex-1 bg-white border border-rose-200 text-rose-600 py-3 rounded-xl font-bold hover:bg-rose-50 transition-all dark:bg-transparent dark:border-rose-900/50 dark:text-rose-400 dark:hover:bg-rose-900/20"
+                        >
+                          Not Resolved (Re-open)
+                        </button>
+                      </div>
                     </motion.div>
                   )}
                 </>
@@ -1500,7 +1613,7 @@ export default function App() {
                                 <div className="flex items-center justify-between mb-1">
                                   <div className="flex items-center gap-2">
                                     <span className="text-sm font-bold text-gray-900 dark:text-gray-200">{activity.user_name}</span>
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 px-1.5 py-0.5 bg-gray-50 rounded border border-gray-100 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-500">{activity.user_role}</span>
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 px-1.5 py-0.5 bg-gray-50 rounded border border-gray-100 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-500">{activity.user_role.replace('_', ' ')}</span>
                                   </div>
                                   <span 
                                     title={format(new Date(activity.created_at), 'PPP p')}

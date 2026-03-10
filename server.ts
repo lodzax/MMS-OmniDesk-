@@ -7,6 +7,10 @@ import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import apiRouter from "./src/api-router.ts";
 
+if (!apiRouter) {
+  console.error("CRITICAL: apiRouter failed to load from ./src/api-router.ts");
+}
+
 let __filename = "";
 let __dirname = "";
 try {
@@ -134,8 +138,7 @@ export async function startServer() {
   });
 }
 
-if (process.env.NODE_ENV !== "production" && !process.env.NETLIFY) {
-  startServer();
-}
+// Start the server
+startServer();
 
 export default app;

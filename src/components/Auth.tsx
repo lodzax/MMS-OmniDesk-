@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
+import { Role } from '../types';
 import { motion } from 'motion/react';
 import { LogIn, UserPlus, Mail, Lock, User as UserIcon, Loader2, ShieldCheck } from 'lucide-react';
 
@@ -12,7 +13,7 @@ export const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState<'user' | 'technician' | 'lead'>('user');
+  const [role, setRole] = useState<Role>('end_user');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -125,9 +126,10 @@ export const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
                     onChange={(e) => setRole(e.target.value as any)}
                     className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm text-black focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                   >
-                    <option value="user">Standard User</option>
+                    <option value="end_user">End User</option>
                     <option value="technician">Technician</option>
-                    <option value="lead">IT Lead</option>
+                    <option value="it_lead">IT Lead</option>
+                    <option value="admin">Admin</option>
                   </select>
                 </div>
               </>

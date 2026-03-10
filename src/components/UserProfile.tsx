@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
-import { User, Shield, Mail, Key, User as UserIcon, Loader2, CheckCircle2 } from 'lucide-react';
+import { User, Shield, Mail, Key, User as UserIcon, Loader2, CheckCircle2, Home } from 'lucide-react';
 import { motion } from 'motion/react';
 import { User as UserType } from '../types';
 
 interface UserProfileProps {
   user: UserType;
   onUpdate: (updatedUser: UserType) => void;
+  onBack: () => void;
 }
 
-export const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdate }) => {
+export const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdate, onBack }) => {
   const [name, setName] = useState(user.name);
   const [loading, setLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
@@ -72,9 +73,18 @@ export const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdate }) => {
 
   return (
     <div className="max-w-4xl mx-auto p-6">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">My Profile</h1>
-        <p className="text-gray-500 dark:text-gray-400">Manage your personal information and security settings.</p>
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">My Profile</h1>
+          <p className="text-gray-500 dark:text-gray-400">Manage your personal information and security settings.</p>
+        </div>
+        <button 
+          onClick={onBack}
+          className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all shadow-sm"
+        >
+          <Home className="w-4 h-4" />
+          Home
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -90,7 +100,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdate }) => {
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">{user.name}</h2>
           <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold uppercase tracking-wider dark:bg-indigo-900/20 dark:text-indigo-400">
             <Shield className="w-3 h-3" />
-            {user.role}
+            {user.role.replace('_', ' ')}
           </div>
           <div className="mt-6 w-full pt-6 border-t border-gray-50 dark:border-gray-800 space-y-4">
             <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">

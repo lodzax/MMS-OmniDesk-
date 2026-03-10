@@ -65,7 +65,8 @@ export const AccountSettings: React.FC<AccountSettingsProps> = ({ currentUser })
 
   const getRoleIcon = (role: Role) => {
     switch (role) {
-      case 'lead': return <ShieldCheck className="w-4 h-4 text-indigo-600" />;
+      case 'admin': return <ShieldAlert className="w-4 h-4 text-rose-600" />;
+      case 'it_lead': return <ShieldCheck className="w-4 h-4 text-indigo-600" />;
       case 'technician': return <Shield className="w-4 h-4 text-emerald-600" />;
       default: return <User className="w-4 h-4 text-gray-400" />;
     }
@@ -73,7 +74,8 @@ export const AccountSettings: React.FC<AccountSettingsProps> = ({ currentUser })
 
   const getRoleColor = (role: Role) => {
     switch (role) {
-      case 'lead': return 'bg-indigo-50 text-indigo-700 border-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800';
+      case 'admin': return 'bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-900/20 dark:text-rose-400 dark:border-rose-800';
+      case 'it_lead': return 'bg-indigo-50 text-indigo-700 border-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800';
       case 'technician': return 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800';
       default: return 'bg-gray-50 text-gray-600 border-gray-100 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700';
     }
@@ -155,7 +157,7 @@ export const AccountSettings: React.FC<AccountSettingsProps> = ({ currentUser })
                     <td className="px-8 py-5">
                       <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${getRoleColor(user.role)}`}>
                         {getRoleIcon(user.role)}
-                        {user.role}
+                        {user.role.replace('_', ' ')}
                       </div>
                     </td>
                     <td className="px-8 py-5 text-right">
@@ -166,9 +168,10 @@ export const AccountSettings: React.FC<AccountSettingsProps> = ({ currentUser })
                           onChange={(e) => handleUpdateRole(user.id, e.target.value as Role)}
                           className="text-xs font-bold bg-gray-100 dark:bg-gray-800 border-none rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50 dark:text-white"
                         >
-                          <option value="user">User</option>
+                          <option value="end_user">End User</option>
                           <option value="technician">Technician</option>
-                          <option value="lead">Lead</option>
+                          <option value="it_lead">IT Lead</option>
+                          <option value="admin">Admin</option>
                         </select>
                         {updatingUserId === user.id && <Loader2 className="w-4 h-4 text-indigo-600 animate-spin" />}
                       </div>

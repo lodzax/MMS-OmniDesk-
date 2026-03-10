@@ -5,9 +5,24 @@ import { Plus, User as UserIcon, Phone, Briefcase, CheckCircle2, XCircle, Clock,
 
 interface TechnicianManagementProps {
   users: User[];
+  currentUser: User;
 }
 
-export const TechnicianManagement: React.FC<TechnicianManagementProps> = ({ users }) => {
+export const TechnicianManagement: React.FC<TechnicianManagementProps> = ({ users, currentUser }) => {
+  if (currentUser.role !== 'it_lead' && currentUser.role !== 'admin' && currentUser.role !== 'technician') {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <div className="w-16 h-16 bg-rose-50 rounded-2xl flex items-center justify-center mb-4 dark:bg-rose-900/20">
+          <XCircle className="w-8 h-8 text-rose-600 dark:text-rose-400" />
+        </div>
+        <h3 className="text-xl font-bold text-gray-900 dark:text-white">Access Denied</h3>
+        <p className="text-gray-500 max-w-xs mt-2 dark:text-gray-400">
+          You do not have the required permissions to view the Technician Management section.
+        </p>
+      </div>
+    );
+  }
+
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
@@ -16,9 +31,11 @@ export const TechnicianManagement: React.FC<TechnicianManagementProps> = ({ user
   
   const [formData, setFormData] = useState({
     id: '',
+    name: '',
+    email: '',
     specialty: '',
     phone: '',
-    status: 'active' as Technician['status']
+    status: 'available' as Technician['status']
   });
 
   useEffect(() => {
@@ -51,6 +68,8 @@ export const TechnicianManagement: React.FC<TechnicianManagementProps> = ({ user
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: formData.id,
+          name: formData.name,
+          email: formData.email,
           specialty: formData.specialty,
           phone: formData.phone,
           status: formData.status
@@ -64,7 +83,7 @@ export const TechnicianManagement: React.FC<TechnicianManagementProps> = ({ user
 
       setIsAdding(false);
       setEditingTech(null);
-      setFormData({ id: '', specialty: '', phone: '', status: 'active' });
+      setFormData({ id: '', name: '', email: '', specialty: '', phone: '', status: 'available' });
       fetchTechnicians();
     } catch (err: any) {
       console.error('Error saving technician:', err);
@@ -86,8 +105,33 @@ export const TechnicianManagement: React.FC<TechnicianManagementProps> = ({ user
     }
   };
 
+  const handleStatusToggle = async (id: string, currentStatus: Technician['status']) => {
+    // Only leads can toggle anyone; technicians can only toggle themselves
+    if (currentUser.role !== 'it_lead' && currentUser.role !== 'admin' && currentUser.id !== id) {
+      return;
+    }
+
+    const statuses: Technician['status'][] = ['available', 'busy', 'offline'];
+    const nextIndex = (statuses.indexOf(currentStatus) + 1) % statuses.length;
+    const nextStatus = statuses[nextIndex];
+
+    try {
+      const response = await fetch(`/api/technicians/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus })
+      });
+
+      if (!response.ok) throw new Error('Failed to update status');
+      
+      setTechnicians(prev => prev.map(t => t.id === id ? { ...t, status: nextStatus } : t));
+    } catch (err) {
+      console.error('Error updating status:', err);
+    }
+  };
+
   const availableUsers = users.filter(u => 
-    (u.role === 'technician' || u.role === 'user') && 
+    (u.role === 'technician' || u.role === 'end_user') && 
     !technicians.some(t => t.id === u.id)
   );
 
@@ -103,13 +147,15 @@ export const TechnicianManagement: React.FC<TechnicianManagementProps> = ({ user
           <h2 className="text-2xl font-bold tracking-tight">Technician Management</h2>
           <p className="text-gray-500 text-sm dark:text-gray-400">Manage your IT support team and their specialties.</p>
         </div>
-        <button 
-          onClick={() => setIsAdding(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all dark:shadow-none"
-        >
-          <Plus className="w-4 h-4" />
-          Add Technician
-        </button>
+        {(currentUser.role === 'it_lead' || currentUser.role === 'admin') && (
+          <button 
+            onClick={() => setIsAdding(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all dark:shadow-none"
+          >
+            <Plus className="w-4 h-4" />
+            Add Technician
+          </button>
+        )}
       </div>
 
       <div className="relative">
@@ -143,28 +189,36 @@ export const TechnicianManagement: React.FC<TechnicianManagementProps> = ({ user
                   </div>
                   <div>
                     <h3 className="font-bold text-gray-900 dark:text-white">{tech.name}</h3>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className={`w-2 h-2 rounded-full ${tech.status === 'active' ? 'bg-green-500' : tech.status === 'on-leave' ? 'bg-amber-500' : 'bg-gray-400'}`}></span>
+                    <button 
+                      onClick={() => handleStatusToggle(tech.id, tech.status)}
+                      disabled={currentUser.role !== 'it_lead' && currentUser.role !== 'admin' && currentUser.id !== tech.id}
+                      className={`flex items-center gap-1.5 mt-0.5 transition-opacity ${currentUser.role === 'it_lead' || currentUser.role === 'admin' || currentUser.id === tech.id ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'}`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${tech.status === 'available' ? 'bg-green-500' : tech.status === 'busy' ? 'bg-amber-500' : 'bg-gray-400'}`}></span>
                       <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">{tech.status}</span>
-                    </div>
+                    </button>
                   </div>
                 </div>
-                <button 
-                  onClick={() => {
-                    setEditingTech(tech);
-                    setFormData({ id: tech.id, specialty: tech.specialty, phone: tech.phone, status: tech.status });
-                    setIsAdding(true);
-                  }}
-                  className="p-2 hover:bg-gray-100 rounded-xl transition-colors dark:hover:bg-gray-800 text-gray-400"
-                >
-                  <Edit className="w-4 h-4" />
-                </button>
-                <button 
-                  onClick={() => handleDelete(tech.id)}
-                  className="p-2 hover:bg-rose-50 rounded-xl transition-colors dark:hover:bg-rose-900/20 text-gray-400 hover:text-rose-600"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {(currentUser.role === 'it_lead' || currentUser.role === 'admin') && (
+                  <div className="flex gap-1">
+                    <button 
+                      onClick={() => {
+                        setEditingTech(tech);
+                        setFormData({ id: tech.id, name: tech.name || '', email: '', specialty: tech.specialty, phone: tech.phone, status: tech.status });
+                        setIsAdding(true);
+                      }}
+                      className="p-2 hover:bg-gray-100 rounded-xl transition-colors dark:hover:bg-gray-800 text-gray-400"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(tech.id)}
+                      className="p-2 hover:bg-rose-50 rounded-xl transition-colors dark:hover:bg-rose-900/20 text-gray-400 hover:text-rose-600"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-3">
@@ -207,19 +261,55 @@ export const TechnicianManagement: React.FC<TechnicianManagementProps> = ({ user
 
                 <form onSubmit={handleSubmit} className="space-y-5">
                   {!editingTech && (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Select User</label>
-                      <select 
-                        required
-                        value={formData.id}
-                        onChange={(e) => setFormData(prev => ({ ...prev, id: e.target.value }))}
-                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm text-black focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                      >
-                        <option value="">Select a user...</option>
-                        {availableUsers.map(u => (
-                          <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
-                        ))}
-                      </select>
+                    <div className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Select Existing User (Optional)</label>
+                        <select 
+                          value={formData.id}
+                          onChange={(e) => {
+                            const selectedUser = users.find(u => u.id === e.target.value);
+                            setFormData(prev => ({ 
+                              ...prev, 
+                              id: e.target.value,
+                              name: selectedUser?.name || prev.name,
+                              email: selectedUser?.email || prev.email
+                            }));
+                          }}
+                          className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm text-black focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                        >
+                          <option value="">-- Create New or Select --</option>
+                          {availableUsers.map(u => (
+                            <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {!formData.id && (
+                        <>
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Full Name</label>
+                            <input 
+                              type="text" 
+                              required={!formData.id}
+                              placeholder="Technician's Full Name"
+                              value={formData.name}
+                              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm text-black focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Email Address</label>
+                            <input 
+                              type="email" 
+                              required={!formData.id}
+                              placeholder="tech@company.com"
+                              value={formData.email}
+                              onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm text-black focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                            />
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
 
@@ -248,7 +338,7 @@ export const TechnicianManagement: React.FC<TechnicianManagementProps> = ({ user
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Status</label>
                     <div className="grid grid-cols-3 gap-2">
-                      {(['active', 'inactive', 'on-leave'] as const).map(s => (
+                      {(['available', 'busy', 'offline'] as const).map(s => (
                         <button
                           key={s}
                           type="button"
