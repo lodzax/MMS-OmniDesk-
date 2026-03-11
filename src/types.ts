@@ -9,7 +9,7 @@ export interface User {
 
 export type TicketCategory = 'laptop' | 'connectivity' | 'printer' | 'software' | 'desktop' | 'other';
 export type TicketStatus = 'open' | 'assigned' | 'completed' | 'acknowledged';
-export type TicketPriority = 'low' | 'medium' | 'high';
+export type TicketPriority = 'low' | 'medium' | 'high' | 'critical';
 
 export interface Ticket {
   id: string;

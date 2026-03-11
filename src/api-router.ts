@@ -341,6 +341,27 @@ router.get("/tickets/:id/activities", async (req, res) => {
   res.json(formattedActivities);
 });
 
+router.get("/activities", async (req, res) => {
+  const { limit = 50 } = req.query;
+  const { data: activities, error } = await supabase
+    .from("activities")
+    .select(`*, user:users(name, role), ticket:tickets(title, category)`)
+    .order('created_at', { ascending: false })
+    .limit(Number(limit));
+    
+  if (error) return res.status(500).json({ error: error.message });
+  
+  const formattedActivities = activities.map(a => ({
+    ...a,
+    user_name: a.user?.name,
+    user_role: a.user?.role,
+    ticket_title: a.ticket?.title,
+    ticket_category: a.ticket?.category
+  }));
+  
+  res.json(formattedActivities);
+});
+
 router.patch("/tickets/:id/assign", async (req, res) => {
   const { id } = req.params;
   const { technician_id, user_id } = req.body;
@@ -576,7 +597,7 @@ router.patch("/tickets/:id/escalate", async (req, res) => {
     .from("tickets")
     .update({ 
       is_escalated: true, 
-      priority: 'high', 
+      priority: 'critical', 
       updated_at: new Date().toISOString() 
     })
     .eq("id", id);

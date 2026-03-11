@@ -52,6 +52,13 @@ const CATEGORIES: { id: TicketCategory; label: string; icon: any }[] = [
   { id: 'other', label: 'Other', icon: HelpCircle },
 ];
 
+const PRIORITY_WEIGHT: Record<TicketPriority, number> = {
+  critical: 4,
+  high: 3,
+  medium: 2,
+  low: 1
+};
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -104,7 +111,7 @@ export default function App() {
 
   const filteredTickets = useMemo(() => {
     if (!currentUser) return [];
-    return tickets.filter(t => {
+    const filtered = tickets.filter(t => {
       // Role-based visibility
       const isCreator = t.created_by === currentUser.id;
       const isRequester = t.requested_for === currentUser.id;
@@ -129,6 +136,13 @@ export default function App() {
       const matchesCategory = categoryFilter === 'all' || t.category === categoryFilter;
 
       return matchesSearch && matchesStatus && matchesPriority && matchesCategory;
+    });
+
+    // Sort by priority (descending) then by date (descending)
+    return [...filtered].sort((a, b) => {
+      const priorityDiff = (PRIORITY_WEIGHT[b.priority] || 0) - (PRIORITY_WEIGHT[a.priority] || 0);
+      if (priorityDiff !== 0) return priorityDiff;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
   }, [tickets, currentUser, searchTerm, statusFilter, priorityFilter, categoryFilter]);
 
@@ -575,7 +589,7 @@ export default function App() {
           fetchTickets();
           fetchActivities(ticketId);
           if (selectedTicket?.id === ticketId) {
-            setSelectedTicket(prev => prev ? { ...prev, is_escalated: true, priority: 'high' } : null);
+            setSelectedTicket(prev => prev ? { ...prev, is_escalated: true, priority: 'critical' } : null);
           }
         } catch (err: any) {
           console.error('Error escalating ticket:', err);
@@ -669,6 +683,7 @@ export default function App() {
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
+      case 'critical': return 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-400 dark:border-rose-800';
       case 'high': return 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800';
       case 'medium': return 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800';
       case 'low': return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800';
@@ -999,6 +1014,7 @@ export default function App() {
                   onChange={(e) => setPriorityFilter(e.target.value as any)}
                 >
                   <option value="all">All Priorities</option>
+                  <option value="critical">Critical Priority</option>
                   <option value="high">High Priority</option>
                   <option value="medium">Medium Priority</option>
                   <option value="low">Low Priority</option>
@@ -1186,15 +1202,16 @@ export default function App() {
 
                         <div>
                           <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2 dark:text-gray-400">Priority Level</label>
-                          <div className="flex gap-3">
-                            {(['low', 'medium', 'high'] as TicketPriority[]).map(p => (
+                          <div className="flex gap-2">
+                            {(['low', 'medium', 'high', 'critical'] as TicketPriority[]).map(p => (
                               <button
                                 key={p}
                                 type="button"
                                 onClick={() => setNewTicket({ ...newTicket, priority: p })}
-                                className={`flex-1 py-2 rounded-xl border text-xs font-bold uppercase tracking-wider transition-all ${
+                                className={`flex-1 py-2 rounded-xl border text-[10px] font-bold uppercase tracking-wider transition-all ${
                                   newTicket.priority === p 
-                                    ? p === 'high' ? 'bg-red-50 border-red-600 text-red-600 dark:bg-red-900/20 dark:border-red-500 dark:text-red-400' :
+                                    ? p === 'critical' ? 'bg-rose-50 border-rose-600 text-rose-600 dark:bg-rose-900/20 dark:border-rose-500 dark:text-rose-400' :
+                                      p === 'high' ? 'bg-red-50 border-red-600 text-red-600 dark:bg-red-900/20 dark:border-red-500 dark:text-red-400' :
                                       p === 'medium' ? 'bg-amber-50 border-amber-600 text-amber-600 dark:bg-amber-900/20 dark:border-amber-500 dark:text-amber-400' :
                                       'bg-blue-50 border-blue-600 text-blue-600 dark:bg-blue-900/20 dark:border-blue-500 dark:text-blue-400'
                                     : 'bg-white border-gray-200 text-gray-400 hover:border-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-500 dark:hover:border-gray-600'
@@ -1314,6 +1331,7 @@ export default function App() {
                               <option value="low">Low</option>
                               <option value="medium">Medium</option>
                               <option value="high">High</option>
+                              <option value="critical">Critical</option>
                             </select>
                           </div>
                         </div>

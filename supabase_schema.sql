@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS tickets (
   description TEXT,
   category TEXT,
   status TEXT DEFAULT 'open', -- open, assigned, in_progress, pending, completed, acknowledged
-  priority TEXT DEFAULT 'medium', -- low, medium, high
+  priority TEXT DEFAULT 'medium', -- low, medium, high, critical
   created_by UUID REFERENCES users(id),
   requested_for UUID REFERENCES users(id),
   assigned_to UUID REFERENCES users(id),

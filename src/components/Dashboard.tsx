@@ -20,7 +20,7 @@ import {
 import { motion } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 
 interface DashboardProps {
   tickets: Ticket[];
@@ -70,7 +70,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }, [tickets]);
 
   const priorityData = useMemo(() => {
-    const counts: Record<string, number> = { low: 0, medium: 0, high: 0 };
+    const counts: Record<string, number> = { low: 0, medium: 0, high: 0, critical: 0 };
     tickets.forEach(t => {
       counts[t.priority] = (counts[t.priority] || 0) + 1;
     });
@@ -174,20 +174,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       // AI Insights
       doc.addPage();
-      doc.setFontSize(16);
-      doc.text('AI-Powered Insights', 14, 22);
+      doc.setFontSize(18);
+      doc.setTextColor(30, 41, 59);
+      doc.text('AI-Powered Insights & Activity Analysis', 14, 22);
+      
+      doc.setFontSize(10);
+      doc.setTextColor(100, 116, 139);
+      doc.text('Advanced analysis of ticket patterns and resolution workflows.', 14, 28);
 
       const ai = new GoogleGenAI({ apiKey: (process.env as any).GEMINI_API_KEY });
       const model = 'gemini-3-flash-preview';
       
+      // Fetch recent activities for analysis
+      const activitiesResponse = await fetch('/api/activities?limit=100');
+      const recentActivities = await activitiesResponse.json();
+      
+      const activitySummary = recentActivities.map((a: any) => 
+        `- [${a.ticket_title || 'Unknown Ticket'}] ${a.user_name} (${a.user_role}): ${a.action} - ${a.details}`
+      ).join('\n');
+
       const ticketSummary = tickets.map(t => `- [${t.category}] ${t.title}: ${t.description.substring(0, 50)}...`).join('\n');
       
       const prompt = `
-        As an IT Support Analyst, analyze the following ticket data and provide 3-4 concise, high-impact insights.
-        Focus on:
-        - Major recurring issues
-        - Potential root causes
-        - Recommendations for system improvement
+        As an IT Support Analyst, analyze the following ticket data and activity logs to provide 4 high-impact insights.
         
         Data Summary:
         Total Tickets: ${metrics.total}
@@ -195,20 +204,102 @@ export const Dashboard: React.FC<DashboardProps> = ({
         Statuses: ${JSON.stringify(statusData)}
         
         Recent Tickets:
-        ${ticketSummary.substring(0, 2000)}
+        ${ticketSummary.substring(0, 1500)}
+        
+        Recent Activity Logs:
+        ${activitySummary.substring(0, 1500)}
       `;
 
-      const response = await ai.models.generateContent({
+      const aiResponse = await ai.models.generateContent({
         model,
         contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              insights: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    impact: { type: Type.STRING, description: "High, Medium, or Low" },
+                    category: { type: Type.STRING, description: "Efficiency, Technical, Process, or Resource" }
+                  },
+                  required: ["title", "description", "impact", "category"]
+                }
+              }
+            },
+            required: ["insights"]
+          }
+        }
       });
 
-      const insights = response.text || "No insights available at this time.";
+      const result = JSON.parse(aiResponse.text || '{"insights": []}');
+      const insights = result.insights;
       
-      doc.setFontSize(11);
-      doc.setTextColor(51, 65, 85); // Slate-700
-      const splitText = doc.splitTextToSize(insights, 180);
-      doc.text(splitText, 14, 35);
+      let currentY = 40;
+      
+      insights.forEach((insight: any, index: number) => {
+        // Draw card background
+        doc.setDrawColor(226, 232, 240); // slate-200
+        doc.setFillColor(248, 250, 252); // slate-50
+        doc.roundedRect(14, currentY, 182, 35, 3, 3, 'FD');
+        
+        // Impact Badge
+        const impactColor = insight.impact.toLowerCase() === 'high' ? [239, 68, 68] : 
+                           insight.impact.toLowerCase() === 'medium' ? [245, 158, 11] : [59, 130, 246];
+        
+        doc.setFillColor(impactColor[0], impactColor[1], impactColor[2]);
+        doc.roundedRect(155, currentY + 5, 35, 6, 1, 1, 'F');
+        doc.setFontSize(8);
+        doc.setTextColor(255, 255, 255);
+        doc.text(`${insight.impact} IMPACT`, 172.5, currentY + 9, { align: 'center' });
+        
+        // Category Label
+        doc.setFontSize(8);
+        doc.setTextColor(100, 116, 139);
+        doc.text(insight.category.toUpperCase(), 20, currentY + 9);
+        
+        // Title
+        doc.setFontSize(12);
+        doc.setTextColor(30, 41, 59);
+        doc.setFont('helvetica', 'bold');
+        doc.text(insight.title, 20, currentY + 18);
+        
+        // Description
+        doc.setFontSize(10);
+        doc.setTextColor(71, 85, 105);
+        doc.setFont('helvetica', 'normal');
+        const splitDesc = doc.splitTextToSize(insight.description, 170);
+        doc.text(splitDesc, 20, currentY + 25);
+        
+        currentY += 42;
+      });
+
+      // Activity Summary Table
+      if (recentActivities.length > 0) {
+        doc.addPage();
+        doc.setFontSize(16);
+        doc.setTextColor(30, 41, 59);
+        doc.text('Recent Resolution Activities', 14, 22);
+        
+        autoTable(doc, {
+          startY: 30,
+          head: [['Ticket', 'User', 'Action', 'Details', 'Date']],
+          body: recentActivities.slice(0, 20).map((a: any) => [
+            a.ticket_title || 'N/A',
+            a.user_name || 'N/A',
+            a.action,
+            a.details.substring(0, 50) + (a.details.length > 50 ? '...' : ''),
+            new Date(a.created_at).toLocaleDateString()
+          ]),
+          theme: 'striped',
+          headStyles: { fillColor: [79, 70, 229] }, // Indigo-600
+        });
+      }
 
       // Save the PDF
       doc.save(`OmniDesk_Report_${new Date().toISOString().split('T')[0]}.pdf`);
