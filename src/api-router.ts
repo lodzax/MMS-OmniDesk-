@@ -300,11 +300,22 @@ router.get("/tickets", async (req, res) => {
       return res.json(simpleTickets);
     }
     
-    const formattedTickets = tickets.map(t => ({
-      ...t,
-      creator_name: (t as any).creator?.name,
-      requester_name: (t as any).requester?.name,
-      technician_name: (t as any).technician?.name
+    const formattedTickets = await Promise.all(tickets.map(async (t) => {
+      // Check if blocked
+      const { data: deps } = await supabase
+        .from("ticket_dependencies")
+        .select("ticket:tickets!ticket_dependencies_depends_on_id_fkey(status)")
+        .eq("ticket_id", t.id);
+      
+      const isBlocked = deps?.some(d => (d.ticket as any)?.status !== 'completed' && (d.ticket as any)?.status !== 'acknowledged') || false;
+
+      return {
+        ...t,
+        creator_name: (t as any).creator?.name,
+        requester_name: (t as any).requester?.name,
+        technician_name: (t as any).technician?.name,
+        is_blocked: isBlocked
+      };
     }));
     res.json(formattedTickets);
   } catch (err: any) {
@@ -481,6 +492,21 @@ router.patch("/tickets/:id/status", async (req, res) => {
     // Other status changes are for assigned technician or lead
     if (user.role !== 'it_lead' && user.role !== 'admin' && ticket.assigned_to !== user_id) {
       return res.status(403).json({ error: "Unauthorized. Only the assigned technician or IT Lead can change the status." });
+    }
+  }
+
+  // Check dependencies if trying to complete
+  if (status === 'completed' || status === 'acknowledged') {
+    const { data: deps, error: depError } = await supabase
+      .from("ticket_dependencies")
+      .select("depends_on_id, ticket:tickets!ticket_dependencies_depends_on_id_fkey(status)")
+      .eq("ticket_id", id);
+    
+    if (!depError && deps) {
+      const unresolved = deps.filter(d => (d.ticket as any)?.status !== 'completed' && (d.ticket as any)?.status !== 'acknowledged');
+      if (unresolved.length > 0) {
+        return res.status(400).json({ error: "Cannot complete ticket. It has unresolved dependencies." });
+      }
     }
   }
   
@@ -660,6 +686,81 @@ router.post("/tickets/bulk-delete", async (req, res) => {
   await supabase.from("activities").delete().in("ticket_id", ticketIds);
   const { error } = await supabase.from("tickets").delete().in("id", ticketIds);
   if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+});
+
+// Ticket Dependencies
+router.get("/tickets/:id/dependencies", async (req, res) => {
+  const { id } = req.params;
+  const { data, error } = await supabase
+    .from("ticket_dependencies")
+    .select(`
+      id,
+      depends_on_id,
+      ticket:tickets!ticket_dependencies_depends_on_id_fkey(id, title, status, priority)
+    `)
+    .eq("ticket_id", id);
+  
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+router.post("/tickets/:id/dependencies", async (req, res) => {
+  const { id } = req.params;
+  const { depends_on_id, user_id } = req.body;
+
+  if (id === depends_on_id) {
+    return res.status(400).json({ error: "A ticket cannot depend on itself." });
+  }
+
+  // Check for circular dependency (simple 1-level check for now, can be improved)
+  const { data: existing } = await supabase
+    .from("ticket_dependencies")
+    .select("id")
+    .eq("ticket_id", depends_on_id)
+    .eq("depends_on_id", id)
+    .single();
+  
+  if (existing) {
+    return res.status(400).json({ error: "Circular dependency detected." });
+  }
+
+  const { data, error } = await supabase
+    .from("ticket_dependencies")
+    .insert([{ ticket_id: id, depends_on_id }])
+    .select()
+    .single();
+  
+  if (error) return res.status(500).json({ error: error.message });
+
+  await supabase.from("activities").insert([{
+    ticket_id: id,
+    user_id,
+    action: "update",
+    details: `Added dependency on ticket #${depends_on_id}`
+  }]);
+
+  res.json(data);
+});
+
+router.delete("/tickets/:id/dependencies/:dep_id", async (req, res) => {
+  const { id, dep_id } = req.params;
+  const { user_id } = req.body;
+
+  const { error } = await supabase
+    .from("ticket_dependencies")
+    .delete()
+    .eq("id", dep_id);
+  
+  if (error) return res.status(500).json({ error: error.message });
+
+  await supabase.from("activities").insert([{
+    ticket_id: id,
+    user_id,
+    action: "update",
+    details: `Removed a dependency.`
+  }]);
+
   res.json({ success: true });
 });
 

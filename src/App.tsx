@@ -41,7 +41,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { supabase } from './supabaseClient';
 import { Auth } from './components/Auth';
-import { User, Ticket, Activity, Role, TicketCategory, TicketStatus, TicketPriority, Notification } from './types';
+import { User, Ticket, Activity, Role, TicketCategory, TicketStatus, TicketPriority, Notification, Dependency } from './types';
 
 const CATEGORIES: { id: TicketCategory; label: string; icon: any }[] = [
   { id: 'laptop', label: 'Laptop', icon: Laptop },
@@ -83,6 +83,9 @@ export default function App() {
   const [isLoadingActivities, setIsLoadingActivities] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [selectedTicketIds, setSelectedTicketIds] = useState<string[]>([]);
+  const [dependencies, setDependencies] = useState<Dependency[]>([]);
+  const [isAddingDependency, setIsAddingDependency] = useState(false);
+  const [dependencySearch, setDependencySearch] = useState('');
 
   useEffect(() => {
     // Explicitly remove dark mode classes and clear theme from localStorage
@@ -228,6 +231,7 @@ export default function App() {
   useEffect(() => {
     if (selectedTicket) {
       fetchActivities(selectedTicket.id);
+      fetchDependencies(selectedTicket.id);
     }
   }, [selectedTicket]);
 
@@ -272,6 +276,54 @@ export default function App() {
       console.error('Error fetching activities:', err);
     } finally {
       setIsLoadingActivities(false);
+    }
+  };
+
+  const fetchDependencies = async (ticketId: string) => {
+    try {
+      const response = await fetch(`/api/tickets/${ticketId}/dependencies`);
+      if (!response.ok) throw new Error('Failed to fetch dependencies');
+      const data = await response.json();
+      setDependencies(data);
+    } catch (err) {
+      console.error('Error fetching dependencies:', err);
+    }
+  };
+
+  const handleAddDependency = async (dependsOnId: string) => {
+    if (!currentUser || !selectedTicket) return;
+    try {
+      const response = await fetch(`/api/tickets/${selectedTicket.id}/dependencies`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ depends_on_id: dependsOnId, user_id: currentUser.id })
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to add dependency');
+      }
+      fetchDependencies(selectedTicket.id);
+      fetchActivities(selectedTicket.id);
+      setIsAddingDependency(false);
+      setDependencySearch('');
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
+    }
+  };
+
+  const handleRemoveDependency = async (depId: number) => {
+    if (!currentUser || !selectedTicket) return;
+    try {
+      const response = await fetch(`/api/tickets/${selectedTicket.id}/dependencies/${depId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: currentUser.id })
+      });
+      if (!response.ok) throw new Error('Failed to remove dependency');
+      fetchDependencies(selectedTicket.id);
+      fetchActivities(selectedTicket.id);
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
     }
   };
 
@@ -1113,6 +1165,12 @@ export default function App() {
                               Escalated
                             </span>
                           )}
+                          {ticket.is_blocked && (
+                            <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border border-amber-600 bg-amber-600 text-white flex items-center gap-1">
+                              <ShieldCheck className="w-2.5 h-2.5" />
+                              Blocked
+                            </span>
+                          )}
                         </div>
                       </div>
                       <span className="text-[10px] text-gray-400 font-mono dark:text-gray-500">#{ticket.id}</span>
@@ -1375,6 +1433,12 @@ export default function App() {
                               Escalated
                             </span>
                           )}
+                          {dependencies.some(d => d.ticket?.status !== 'completed' && d.ticket?.status !== 'acknowledged') && (
+                            <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border border-amber-600 bg-amber-600 text-white flex items-center gap-1">
+                              <ShieldCheck className="w-3 h-3" />
+                              Blocked
+                            </span>
+                          )}
                           <span className="text-xs text-gray-400 font-mono dark:text-gray-500">#{selectedTicket.id}</span>
                         </div>
                         <h2 className="text-2xl font-bold tracking-tight mb-2 dark:text-white">{selectedTicket.title}</h2>
@@ -1447,6 +1511,81 @@ export default function App() {
 
                     <div className="prose prose-sm max-w-none text-gray-600 mb-8 dark:text-gray-400">
                       <p className="text-base leading-relaxed">{selectedTicket.description}</p>
+                    </div>
+
+                    {/* Dependencies Section */}
+                    <div className="mb-8 p-6 rounded-2xl bg-gray-50 border border-gray-100 dark:bg-gray-800/50 dark:border-gray-800">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                          <List className="w-4 h-4" />
+                          Task Dependencies
+                        </h3>
+                        {(currentUser.role === 'it_lead' || currentUser.role === 'admin' || currentUser.role === 'technician') && (
+                          <button 
+                            onClick={() => setIsAddingDependency(!isAddingDependency)}
+                            className="text-xs font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 flex items-center gap-1"
+                          >
+                            <Plus className="w-3 h-3" />
+                            Add Dependency
+                          </button>
+                        )}
+                      </div>
+
+                      {isAddingDependency && (
+                        <div className="mb-4 p-4 bg-white rounded-xl border border-gray-200 shadow-sm dark:bg-gray-900 dark:border-gray-700">
+                          <div className="relative mb-3">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input 
+                              type="text"
+                              placeholder="Search tickets by title or ID..."
+                              className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+                              value={dependencySearch}
+                              onChange={(e) => setDependencySearch(e.target.value)}
+                            />
+                          </div>
+                          <div className="max-h-40 overflow-y-auto space-y-1">
+                            {tickets
+                              .filter(t => t.id !== selectedTicket.id && !dependencies.some(d => d.depends_on_id === t.id))
+                              .filter(t => t.title.toLowerCase().includes(dependencySearch.toLowerCase()) || t.id.toLowerCase().includes(dependencySearch.toLowerCase()))
+                              .map(t => (
+                                <button
+                                  key={t.id}
+                                  onClick={() => handleAddDependency(t.id)}
+                                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 text-sm flex items-center justify-between group dark:hover:bg-gray-800"
+                                >
+                                  <span className="truncate mr-2 dark:text-gray-300">{t.title} <span className="text-gray-400 font-mono text-xs">#{t.id}</span></span>
+                                  <Plus className="w-3 h-3 text-gray-300 group-hover:text-indigo-500" />
+                                </button>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {dependencies.length === 0 ? (
+                        <p className="text-sm text-gray-400 italic">No dependencies linked to this ticket.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {dependencies.map(dep => (
+                            <div key={dep.id} className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-200 dark:bg-gray-900 dark:border-gray-700">
+                              <div className="flex items-center gap-3 overflow-hidden">
+                                <span className={`flex-shrink-0 w-2 h-2 rounded-full ${dep.ticket?.status === 'completed' || dep.ticket?.status === 'acknowledged' ? 'bg-green-500' : 'bg-amber-500'}`}></span>
+                                <div className="truncate">
+                                  <p className="text-sm font-medium truncate dark:text-gray-200">{dep.ticket?.title}</p>
+                                  <p className="text-[10px] text-gray-400 font-mono">#{dep.depends_on_id} • {dep.ticket?.status}</p>
+                                </div>
+                              </div>
+                              {(currentUser.role === 'it_lead' || currentUser.role === 'admin' || currentUser.role === 'technician') && (
+                                <button 
+                                  onClick={() => handleRemoveDependency(dep.id)}
+                                  className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors dark:hover:bg-red-900/20"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-6 border-t border-gray-100 dark:border-gray-800">

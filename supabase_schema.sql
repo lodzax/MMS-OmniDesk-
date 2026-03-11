@@ -218,3 +218,17 @@ CREATE TABLE IF NOT EXISTS user_audit_log (
 ALTER TABLE user_audit_log ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Admins can view audit logs" ON user_audit_log FOR SELECT USING (is_admin());
 CREATE POLICY "System can insert audit logs" ON user_audit_log FOR INSERT WITH CHECK (true);
+
+-- 11. Ticket Dependencies Table
+CREATE TABLE IF NOT EXISTS ticket_dependencies (
+  id BIGSERIAL PRIMARY KEY,
+  ticket_id TEXT REFERENCES tickets(id) ON DELETE CASCADE,
+  depends_on_id TEXT REFERENCES tickets(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(ticket_id, depends_on_id)
+);
+
+-- RLS for ticket_dependencies
+ALTER TABLE ticket_dependencies ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Dependencies are viewable by everyone" ON ticket_dependencies FOR SELECT USING (true);
+CREATE POLICY "Technicians and Admins can manage dependencies" ON ticket_dependencies FOR ALL USING (is_technician());

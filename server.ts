@@ -5,10 +5,21 @@ import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "http";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
-import apiRouter from "./src/api-router.ts";
+import cors from "cors";
+import apiRouter from "./src/api-router";
+
+process.on('uncaughtException', (err) => {
+  console.error('CRITICAL: Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('CRITICAL: Unhandled Rejection at:', promise, 'reason:', reason);
+});
 
 if (!apiRouter) {
-  console.error("CRITICAL: apiRouter failed to load from ./src/api-router.ts");
+  console.error("CRITICAL: apiRouter failed to load from ./src/api-router");
+} else {
+  console.log("apiRouter loaded successfully");
 }
 
 let __filename = "";
@@ -58,12 +69,22 @@ function sendNotification(userId: string, notification: any) {
 }
 
 const app = express();
+app.use(cors());
 app.use(express.json());
+
+// Request logger
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  next();
+});
 
 // Mount the API router
 app.use("/api", apiRouter);
 
-const PORT = 3000;
+// Basic health check
+app.get("/api/ping", (req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
+
+const PORT = Number(process.env.PORT) || 3000;
 
 export async function startServer() {
   // NOTE: WebSockets are not supported on standard Netlify Functions.
@@ -105,6 +126,9 @@ export async function startServer() {
     
     app.get("*", async (req, res, next) => {
       const url = req.originalUrl;
+      if (url.startsWith('/api')) {
+        return next();
+      }
       try {
         let template = await vite.transformIndexHtml(url, `
           <!doctype html>
@@ -139,6 +163,9 @@ export async function startServer() {
 }
 
 // Start the server
-startServer();
+startServer().catch(err => {
+  console.error("CRITICAL: Failed to start server:", err);
+  process.exit(1);
+});
 
 export default app;

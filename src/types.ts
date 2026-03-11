@@ -27,6 +27,7 @@ export interface Ticket {
   requester_name: string;
   technician_name: string | null;
   is_escalated: boolean;
+  is_blocked?: boolean;
 }
 
 export interface Activity {
@@ -56,4 +57,10 @@ export interface Notification {
   ticket_id: string;
   is_read: number;
   created_at: string;
+}
+
+export interface Dependency {
+  id: number;
+  depends_on_id: string;
+  ticket?: Partial<Ticket>;
 }
