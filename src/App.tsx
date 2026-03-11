@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Dashboard } from './components/Dashboard';
 import { TechnicianManagement } from './components/TechnicianManagement';
+import { UserManagement } from './components/UserManagement';
 import { UserProfile } from './components/UserProfile';
 import { AccountSettings } from './components/AccountSettings';
 import { Modal } from './components/Modal';
@@ -33,7 +34,8 @@ import {
   Trash2,
   Check,
   List,
-  Loader2
+  Loader2,
+  Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDistanceToNow, format } from 'date-fns';
@@ -69,7 +71,7 @@ export default function App() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [view, setView] = useState<'list' | 'dashboard' | 'technicians' | 'profile' | 'account-settings'>('profile');
+  const [view, setView] = useState<'list' | 'dashboard' | 'technicians' | 'users' | 'profile' | 'account-settings'>('profile');
   const [isLoadingTickets, setIsLoadingTickets] = useState(false);
   const [isLoadingActivities, setIsLoadingActivities] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -790,6 +792,15 @@ export default function App() {
                     Technicians
                   </button>
                 )}
+                {(currentUser.role === 'it_lead' || currentUser.role === 'admin') && (
+                  <button 
+                    onClick={() => setView('users')}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${view === 'users' ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-indigo-400' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    Users
+                  </button>
+                )}
               </div>
             )}
             
@@ -908,6 +919,8 @@ export default function App() {
           <AccountSettings currentUser={currentUser} />
         ) : view === 'technicians' && (currentUser.role === 'it_lead' || currentUser.role === 'admin' || currentUser.role === 'technician') ? (
           <TechnicianManagement users={users} currentUser={currentUser} />
+        ) : view === 'users' && (currentUser.role === 'it_lead' || currentUser.role === 'admin') ? (
+          <UserManagement currentUser={currentUser} />
         ) : view === 'dashboard' && currentUser.role !== 'end_user' ? (
           <Dashboard 
             tickets={tickets} 

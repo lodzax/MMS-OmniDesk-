@@ -201,8 +201,11 @@ router.get("/users/:id", async (req, res) => {
       role: user.user_metadata?.role || "end_user",
       email: user.email
     };
-    const { data: newProfile, error: insertError } = await supabase.from("users").insert([profileData]).select().single();
-    if (insertError) return res.status(500).json({ error: "Failed to auto-create user profile." });
+    const { data: newProfile, error: insertError } = await supabase.from("users").upsert([profileData]).select().single();
+    if (insertError) {
+      console.error("Error auto-creating user profile:", insertError);
+      return res.status(500).json({ error: `Failed to auto-create user profile: ${insertError.message}` });
+    }
     return res.json(newProfile);
   } catch (err: any) {
     return res.status(500).json({ error: err.message || "An unexpected error occurred" });
