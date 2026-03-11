@@ -201,3 +201,20 @@ CREATE POLICY "Users can add activities to their tickets" ON activities FOR INSE
 CREATE POLICY "Users can view own notifications" ON notifications FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can update own notifications" ON notifications FOR UPDATE USING (auth.uid() = user_id);
 CREATE POLICY "System can create notifications" ON notifications FOR INSERT WITH CHECK (true);
+
+-- 10. User Audit Log Table
+CREATE TABLE IF NOT EXISTS user_audit_log (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  changed_by UUID REFERENCES users(id),
+  old_role TEXT,
+  new_role TEXT,
+  old_name TEXT,
+  new_name TEXT,
+  changed_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS for Audit Log
+ALTER TABLE user_audit_log ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Admins can view audit logs" ON user_audit_log FOR SELECT USING (is_admin());
+CREATE POLICY "System can insert audit logs" ON user_audit_log FOR INSERT WITH CHECK (true);

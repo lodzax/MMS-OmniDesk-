@@ -13,11 +13,26 @@ import {
   X,
   ChevronDown,
   Mail,
-  Calendar
+  Calendar,
+  History,
+  ArrowRight
 } from 'lucide-react';
+import { format } from 'date-fns';
 
 interface UserManagementProps {
   currentUser: User;
+}
+
+interface AuditLogEntry {
+  id: number;
+  user_id: string;
+  changed_by: string | null;
+  old_role: string;
+  new_role: string;
+  old_name: string;
+  new_name: string;
+  changed_at: string;
+  changed_by_user?: { name: string };
 }
 
 const ROLE_CONFIG: Record<Role, { label: string; icon: any; color: string; bg: string }> = {
@@ -33,6 +48,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
   const [searchTerm, setSearchTerm] = useState('');
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
   const [showRoleDropdown, setShowRoleDropdown] = useState<string | null>(null);
+  const [selectedUserForAudit, setSelectedUserForAudit] = useState<User | null>(null);
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+  const [isLoadingAudit, setIsLoadingAudit] = useState(false);
 
   useEffect(() => {
     fetchUsers();
@@ -52,6 +70,20 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
     }
   };
 
+  const fetchAuditLogs = async (userId: string) => {
+    setIsLoadingAudit(true);
+    try {
+      const response = await fetch(`/api/users/${userId}/audit-log`);
+      if (!response.ok) throw new Error('Failed to fetch audit logs');
+      const data = await response.json();
+      setAuditLogs(data);
+    } catch (err) {
+      console.error('Error fetching audit logs:', err);
+    } finally {
+      setIsLoadingAudit(false);
+    }
+  };
+
   const handleUpdateRole = async (userId: string, newRole: Role) => {
     setUpdatingUserId(userId);
     setShowRoleDropdown(null);
@@ -59,7 +91,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
       const response = await fetch(`/api/users/${userId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: newRole })
+        body: JSON.stringify({ 
+          role: newRole,
+          changed_by: currentUser.id 
+        })
       });
 
       if (!response.ok) throw new Error('Failed to update role');
@@ -124,7 +159,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                 <tr className="bg-gray-50/50 dark:bg-gray-800/50">
                   <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">User</th>
                   <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Role</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Status</th>
+                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Joined</th>
                   <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400 text-right">Actions</th>
                 </tr>
               </thead>
@@ -201,13 +236,25 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                         </div>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        {updatingUserId === user.id ? (
-                          <Loader2 className="w-4 h-4 text-indigo-600 animate-spin ml-auto" />
-                        ) : (
-                          <div className="text-xs font-bold text-gray-400">
-                            {user.id === currentUser.id ? '(You)' : ''}
-                          </div>
-                        )}
+                        <div className="flex items-center justify-end gap-2">
+                          <button 
+                            onClick={() => {
+                              setSelectedUserForAudit(user);
+                              fetchAuditLogs(user.id);
+                            }}
+                            className="p-2 hover:bg-gray-100 rounded-xl transition-colors dark:hover:bg-gray-800 text-gray-400 hover:text-indigo-600"
+                            title="View Audit Log"
+                          >
+                            <History className="w-4 h-4" />
+                          </button>
+                          {updatingUserId === user.id ? (
+                            <Loader2 className="w-4 h-4 text-indigo-600 animate-spin" />
+                          ) : (
+                            <div className="text-xs font-bold text-gray-400 min-w-[40px]">
+                              {user.id === currentUser.id ? '(You)' : ''}
+                            </div>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -224,6 +271,87 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
           )}
         </div>
       )}
+
+      {/* Audit Log Modal */}
+      <AnimatePresence>
+        {selectedUserForAudit && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-2xl bg-white rounded-[32px] shadow-2xl overflow-hidden dark:bg-[#1C1C1E]"
+            >
+              <div className="p-8">
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <h3 className="text-xl font-bold">Audit Log</h3>
+                    <p className="text-sm text-gray-500">Changes for {selectedUserForAudit.name}</p>
+                  </div>
+                  <button onClick={() => setSelectedUserForAudit(null)} className="p-2 hover:bg-gray-100 rounded-full dark:hover:bg-gray-800">
+                    <X className="w-6 h-6 text-gray-400" />
+                  </button>
+                </div>
+
+                <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-4">
+                  {isLoadingAudit ? (
+                    <div className="flex items-center justify-center py-10">
+                      <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+                    </div>
+                  ) : auditLogs.length === 0 ? (
+                    <div className="text-center py-10 text-gray-400">
+                      <History className="w-12 h-12 mx-auto mb-2 opacity-20" />
+                      <p>No changes recorded for this user.</p>
+                    </div>
+                  ) : (
+                    auditLogs.map(log => (
+                      <div key={log.id} className="bg-gray-50 rounded-2xl p-4 border border-gray-100 dark:bg-gray-800/50 dark:border-gray-800">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center dark:bg-indigo-900/30">
+                              <UserIcon className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                            </div>
+                            <span className="text-xs font-bold text-gray-900 dark:text-white">
+                              {log.changed_by_user?.name || 'System'}
+                            </span>
+                            <span className="text-xs text-gray-400">made a change</span>
+                          </div>
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                            {format(new Date(log.changed_at), 'MMM d, yyyy HH:mm')}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {log.old_role !== log.new_role && (
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Role Change</span>
+                              <div className="flex items-center gap-2">
+                                <span className="px-2 py-0.5 bg-gray-100 rounded text-[10px] font-bold text-gray-500 dark:bg-gray-800">{log.old_role}</span>
+                                <ArrowRight className="w-3 h-3 text-gray-300" />
+                                <span className="px-2 py-0.5 bg-indigo-50 rounded text-[10px] font-bold text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">{log.new_role}</span>
+                              </div>
+                            </div>
+                          )}
+                          {log.old_name !== log.new_name && (
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Name Change</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-500 line-through">{log.old_name}</span>
+                                <ArrowRight className="w-3 h-3 text-gray-300" />
+                                <span className="text-xs font-bold text-gray-900 dark:text-white">{log.new_name}</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

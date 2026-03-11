@@ -214,8 +214,11 @@ router.get("/users/:id", async (req, res) => {
 
 router.patch("/users/:id", async (req, res) => {
   const { id } = req.params;
-  const { name, role } = req.body;
+  const { name, role, changed_by } = req.body;
   
+  // Fetch old data for audit log
+  const { data: oldUser } = await supabase.from("users").select("*").eq("id", id).single();
+
   const updateData: any = {};
   if (name !== undefined) updateData.name = name;
   if (role !== undefined) updateData.role = role;
@@ -229,11 +232,38 @@ router.patch("/users/:id", async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
 
+  // Log the change
+  if (oldUser && (oldUser.name !== data.name || oldUser.role !== data.role)) {
+    await supabase.from("user_audit_log").insert([{
+      user_id: id,
+      changed_by: changed_by || null,
+      old_role: oldUser.role,
+      new_role: data.role,
+      old_name: oldUser.name,
+      new_name: data.name
+    }]);
+  }
+
   // If role was updated to technician, ensure they are in the technicians table
   if (role === 'technician') {
     await supabase.from("technicians").upsert([{ id, status: 'available' }]);
   }
 
+  res.json(data);
+});
+
+router.get("/users/:id/audit-log", async (req, res) => {
+  const { id } = req.params;
+  const { data, error } = await supabase
+    .from("user_audit_log")
+    .select(`
+      *,
+      changed_by_user:users!user_audit_log_changed_by_fkey(name)
+    `)
+    .eq("user_id", id)
+    .order("changed_at", { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
   res.json(data);
 });
 
