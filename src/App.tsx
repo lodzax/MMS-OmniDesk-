@@ -15,6 +15,8 @@ import {
   Clock, 
   AlertCircle, 
   ChevronRight, 
+  ChevronDown,
+  ChevronUp,
   MessageSquare, 
   History,
   Laptop,
@@ -85,6 +87,7 @@ export default function App() {
   const [selectedTicketIds, setSelectedTicketIds] = useState<string[]>([]);
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
   const [isAddingDependency, setIsAddingDependency] = useState(false);
+  const [isResolutionExpanded, setIsResolutionExpanded] = useState(false);
   const [dependencySearch, setDependencySearch] = useState('');
 
   useEffect(() => {
@@ -932,6 +935,7 @@ export default function App() {
                               if (ticket) {
                                 setSelectedTicket(ticket);
                                 setIsEditingDetail(false);
+                                setIsResolutionExpanded(ticket.status === 'completed' || ticket.status === 'acknowledged');
                               }
                               setShowNotifications(false);
                             }}
@@ -1125,6 +1129,7 @@ export default function App() {
                     onClick={() => {
                       setSelectedTicket(ticket);
                       setIsEditingDetail(false);
+                      setIsResolutionExpanded(ticket.status === 'completed' || ticket.status === 'acknowledged');
                     }}
                     className={`p-4 rounded-2xl border transition-all cursor-pointer group relative overflow-hidden ${
                       selectedTicket?.id === ticket.id 
@@ -1513,6 +1518,57 @@ export default function App() {
                       <p className="text-base leading-relaxed">{selectedTicket.description}</p>
                     </div>
 
+                    {/* Resolution Details Section */}
+                    {(selectedTicket.status === 'completed' || selectedTicket.status === 'acknowledged' || activities.some(a => a.action === 'update' && a.details !== 'Ticket details updated.')) && (
+                      <div className="mb-8 p-6 rounded-2xl bg-indigo-50/50 border border-indigo-100 dark:bg-indigo-900/10 dark:border-indigo-900/30">
+                        <button 
+                          onClick={() => setIsResolutionExpanded(!isResolutionExpanded)}
+                          className="w-full flex items-center justify-between group"
+                        >
+                          <h3 className="text-sm font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4" />
+                            Resolution Details
+                          </h3>
+                          {isResolutionExpanded ? (
+                            <ChevronUp className="w-4 h-4 text-indigo-400 group-hover:text-indigo-600 transition-colors" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4 text-indigo-400 group-hover:text-indigo-600 transition-colors" />
+                          )}
+                        </button>
+                        
+                        <AnimatePresence>
+                          {isResolutionExpanded && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="overflow-hidden"
+                            >
+                              <div className="pt-4 space-y-4">
+                                {activities
+                                  .filter(a => (a.action === 'update' && a.details !== 'Ticket details updated.') || a.action === 'completed' || a.action === 'acknowledged')
+                                  .length > 0 ? (
+                                    activities
+                                      .filter(a => (a.action === 'update' && a.details !== 'Ticket details updated.') || a.action === 'completed' || a.action === 'acknowledged')
+                                      .map((activity) => (
+                                        <div key={activity.id} className="p-3 bg-white rounded-xl border border-indigo-100/50 shadow-sm dark:bg-gray-900 dark:border-indigo-900/20">
+                                          <div className="flex items-center justify-between mb-1">
+                                            <span className="text-xs font-bold text-gray-900 dark:text-gray-200">{activity.user_name}</span>
+                                            <span className="text-[10px] text-gray-400">{formatDistanceToNow(new Date(activity.created_at), { addSuffix: true })}</span>
+                                          </div>
+                                          <p className="text-sm text-gray-600 dark:text-gray-400 italic">"{activity.details}"</p>
+                                        </div>
+                                      ))
+                                  ) : (
+                                    <p className="text-sm text-gray-400 italic pt-2">No resolution steps logged yet.</p>
+                                  )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    )}
+
                     {/* Dependencies Section */}
                     <div className="mb-8 p-6 rounded-2xl bg-gray-50 border border-gray-100 dark:bg-gray-800/50 dark:border-gray-800">
                       <div className="flex items-center justify-between mb-4">
@@ -1618,7 +1674,7 @@ export default function App() {
               {!isEditingDetail && (
                 <>
                   {/* Technician Controls: Work Log */}
-                  {(currentUser.role === 'it_lead' || currentUser.role === 'admin' || selectedTicket.assigned_to === currentUser.id) && (
+                  {(currentUser.role === 'it_lead' || currentUser.role === 'admin' || currentUser.role === 'technician' || selectedTicket.assigned_to === currentUser.id) && (
                     <motion.div 
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
