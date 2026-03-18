@@ -144,7 +144,16 @@ export default function App() {
 
   useEffect(() => {
     // Check initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        console.error('Session check error:', error);
+        if (error.message.includes('Refresh Token Not Found') || error.message.includes('Invalid Refresh Token')) {
+          supabase.auth.signOut();
+        }
+        setIsAuthLoading(false);
+        return;
+      }
+      
       if (session) {
         fetchUserProfile(session.user.id);
       } else {
@@ -153,7 +162,8 @@ export default function App() {
     });
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth event:', event);
       if (session) {
         fetchUserProfile(session.user.id);
       } else {
@@ -179,6 +189,10 @@ export default function App() {
 
       if (!response.ok) {
         const errorData = await response.json();
+        if (response.status === 404) {
+          console.warn('User profile not found, signing out...');
+          supabase.auth.signOut();
+        }
         throw new Error(errorData.error || 'Failed to fetch profile');
       }
       const data = await response.json();
