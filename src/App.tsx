@@ -6,6 +6,7 @@ import { UserProfile } from './components/UserProfile';
 import { AccountSettings } from './components/AccountSettings';
 import { Modal } from './components/Modal';
 import { SettingsModal } from './components/SettingsModal';
+import { KnowledgeBaseSuggestions } from './components/KnowledgeBaseSuggestions';
 import { 
   Ticket as TicketIcon, 
   Plus, 
@@ -15,10 +16,12 @@ import {
   Clock, 
   AlertCircle, 
   ChevronRight, 
+  ChevronLeft,
   ChevronDown,
   ChevronUp,
   MessageSquare, 
   History,
+  Inbox,
   Laptop,
   Monitor,
   HelpCircle,
@@ -37,13 +40,19 @@ import {
   Check,
   List,
   Loader2,
-  Users
+  Users,
+  Tag,
+  ExternalLink,
+  Book,
+  Lightbulb,
+  ArrowRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { formatDistanceToNow, format } from 'date-fns';
+import { formatDistanceToNow, format, addHours } from 'date-fns';
 import { supabase } from './supabaseClient';
 import { Auth } from './components/Auth';
-import { User, Ticket, Activity, Role, TicketCategory, TicketStatus, TicketPriority, Notification, Dependency } from './types';
+import { User, Ticket, Activity, Role, TicketCategory, TicketStatus, TicketPriority, Notification, Dependency, KnowledgeBaseArticle } from './types';
+import { SLA_HOURS, SLA_LABELS } from './constants';
 
 const CATEGORIES: { id: TicketCategory; label: string; icon: any }[] = [
   { id: 'laptop', label: 'Laptop', icon: Laptop },
@@ -65,16 +74,25 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [allTickets, setAllTickets] = useState<Ticket[]>([]);
   const [statusFilter, setStatusFilter] = useState<TicketStatus | 'all'>('all');
   const [priorityFilter, setPriorityFilter] = useState<TicketPriority | 'all'>('all');
   const [categoryFilter, setCategoryFilter] = useState<TicketCategory | 'all'>('all');
+  const [tagFilter, setTagFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, priorityFilter, categoryFilter, tagFilter, searchTerm]);
+
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [isEditingDetail, setIsEditingDetail] = useState(false);
-  const [editForm, setEditForm] = useState({ title: '', description: '', category: 'laptop' as TicketCategory, priority: 'medium' as TicketPriority, requested_for: '' });
-  const [newTicket, setNewTicket] = useState({ title: '', description: '', category: 'laptop' as TicketCategory, priority: 'medium' as TicketPriority, requested_for: '' });
+  const [editForm, setEditForm] = useState({ title: '', description: '', category: 'laptop' as TicketCategory, priority: 'medium' as TicketPriority, requested_for: '', tags: [] as string[] });
+  const [newTicket, setNewTicket] = useState({ title: '', description: '', category: 'laptop' as TicketCategory, priority: 'medium' as TicketPriority, requested_for: '', tags: [] as string[] });
+  const [tagInput, setTagInput] = useState('');
+  const [editTagInput, setEditTagInput] = useState('');
   const [workLog, setWorkLog] = useState('');
   const [comment, setComment] = useState('');
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -87,8 +105,13 @@ export default function App() {
   const [selectedTicketIds, setSelectedTicketIds] = useState<string[]>([]);
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
   const [isAddingDependency, setIsAddingDependency] = useState(false);
+  const [isEscalating, setIsEscalating] = useState(false);
+  const [escalationReason, setEscalationReason] = useState('');
   const [isResolutionExpanded, setIsResolutionExpanded] = useState(false);
   const [dependencySearch, setDependencySearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalTickets, setTotalTickets] = useState(0);
+  const [ticketsPerPage] = useState(10);
 
   useEffect(() => {
     // Explicitly remove dark mode classes and clear theme from localStorage
@@ -116,41 +139,8 @@ export default function App() {
   });
 
   const filteredTickets = useMemo(() => {
-    if (!currentUser) return [];
-    const filtered = tickets.filter(t => {
-      // Role-based visibility
-      const isCreator = t.created_by === currentUser.id;
-      const isRequester = t.requested_for === currentUser.id;
-      const isAssigned = t.assigned_to === currentUser.id;
-
-      // Role-based visibility: IT Leads and Technicians see all tickets.
-      // Regular users only see tickets they created or were requested for.
-      let hasAccess = false;
-      if (currentUser.role === 'it_lead' || currentUser.role === 'admin' || currentUser.role === 'technician') {
-        hasAccess = true;
-      } else {
-        hasAccess = isCreator || isRequester;
-      }
-
-      if (!hasAccess) return false;
-
-      // Search and filters
-      const matchesSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                           t.description.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = statusFilter === 'all' || t.status === statusFilter;
-      const matchesPriority = priorityFilter === 'all' || t.priority === priorityFilter;
-      const matchesCategory = categoryFilter === 'all' || t.category === categoryFilter;
-
-      return matchesSearch && matchesStatus && matchesPriority && matchesCategory;
-    });
-
-    // Sort by priority (descending) then by date (descending)
-    return [...filtered].sort((a, b) => {
-      const priorityDiff = (PRIORITY_WEIGHT[b.priority] || 0) - (PRIORITY_WEIGHT[a.priority] || 0);
-      if (priorityDiff !== 0) return priorityDiff;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    });
-  }, [tickets, currentUser, searchTerm, statusFilter, priorityFilter, categoryFilter]);
+    return tickets;
+  }, [tickets]);
 
   useEffect(() => {
     // Check initial session
@@ -241,11 +231,24 @@ export default function App() {
   const fetchUsers = async () => {
     try {
       const response = await fetch('/api/users');
-      if (!response.ok) throw new Error('Failed to fetch users');
+      const contentType = response.headers.get('content-type');
+      
+      if (contentType && contentType.includes('text/html')) {
+        const text = await response.text();
+        console.error('Received HTML instead of JSON for /api/users:', text.substring(0, 200));
+        throw new Error('Server returned HTML instead of JSON. This usually means the API route is missing or the server is misconfigured.');
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown server error' }));
+        throw new Error(errorData.error || `Failed to fetch users (${response.status})`);
+      }
       const data = await response.json();
       setUsers(data || []);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching users:', err);
+      // We don't alert here to avoid spamming the main app view, 
+      // but we log it clearly.
     }
   };
 
@@ -253,20 +256,60 @@ export default function App() {
     if (!currentUser) return;
     setIsLoadingTickets(true);
     try {
-      const response = await fetch('/api/tickets');
+      const params = new URLSearchParams({
+        page: currentPage.toString(),
+        limit: ticketsPerPage.toString(),
+        user_id: currentUser.id,
+        status: statusFilter,
+        priority: priorityFilter,
+        category: categoryFilter,
+        tag: tagFilter,
+        search: searchTerm
+      });
+
+      const response = await fetch(`/api/tickets?${params.toString()}`);
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Server error (${response.status}): ${errorText.substring(0, 100)}`);
       }
       const data = await response.json();
-      setTickets(data);
+      setTickets(data.tickets);
+      setTotalTickets(data.totalCount);
     } catch (err: any) {
       console.error('Error fetching tickets:', err);
-      // Don't show alert for background fetches to avoid spamming
     } finally {
       setIsLoadingTickets(false);
     }
   };
+
+  useEffect(() => {
+    if (currentUser) {
+      fetchTickets();
+    }
+  }, [currentUser, currentPage, statusFilter, priorityFilter, categoryFilter, tagFilter, searchTerm]);
+
+  const fetchAllTickets = async () => {
+    if (!currentUser) return;
+    try {
+      const params = new URLSearchParams({
+        limit: '1000', // Fetch a large enough amount for the dashboard
+        user_id: currentUser.id
+      });
+      const response = await fetch(`/api/tickets?${params.toString()}`);
+      if (response.ok) {
+        const data = await response.json();
+        setAllTickets(data.tickets);
+      }
+    } catch (err) {
+      console.error('Error fetching all tickets for dashboard:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (currentUser && view === 'dashboard') {
+      fetchAllTickets();
+    }
+  }, [currentUser, view]);
 
   const fetchActivities = async (ticketId: string) => {
     setIsLoadingActivities(true);
@@ -382,7 +425,8 @@ export default function App() {
               category: newTicket.category,
               priority: newTicket.priority,
               created_by: currentUser.id,
-              requested_for: requesterId
+              requested_for: requesterId,
+              tags: newTicket.tags
             })
           });
 
@@ -393,7 +437,7 @@ export default function App() {
           }
 
           setIsCreating(false);
-          setNewTicket({ title: '', description: '', category: 'laptop', priority: 'medium', requested_for: '' });
+          setNewTicket({ title: '', description: '', category: 'laptop', priority: 'medium', requested_for: '', tags: [] });
           fetchTickets();
         } catch (err: any) {
           console.error('Error creating ticket:', err);
@@ -616,42 +660,41 @@ export default function App() {
 
   const handleEscalate = async (ticketId: string) => {
     if (!currentUser) return;
-    
-    const reason = prompt("Please provide a reason for escalation (optional):") || "Unresolved for too long";
-    
-    setConfirmModal({
-      isOpen: true,
-      title: 'Confirm Escalation',
-      message: 'Are you sure you want to escalate this ticket? IT Leads will be notified immediately.',
-      type: 'warning',
-      confirmText: 'Escalate Ticket',
-      onConfirm: async () => {
-        try {
-          const response = await fetch(`/api/tickets/${ticketId}/escalate`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              user_id: currentUser.id,
-              reason
-            })
-          });
+    setIsEscalating(true);
+    setEscalationReason('');
+  };
 
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to escalate ticket');
-          }
+  const submitEscalation = async () => {
+    if (!selectedTicket || !currentUser) return;
+    
+    const ticketId = selectedTicket.id;
+    const reason = escalationReason || "Unresolved for too long";
+    
+    try {
+      const response = await fetch(`/api/tickets/${ticketId}/escalate`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: currentUser.id,
+          reason
+        })
+      });
 
-          fetchTickets();
-          fetchActivities(ticketId);
-          if (selectedTicket?.id === ticketId) {
-            setSelectedTicket(prev => prev ? { ...prev, is_escalated: true, priority: 'critical' } : null);
-          }
-        } catch (err: any) {
-          console.error('Error escalating ticket:', err);
-          alert(`Error: ${err.message}`);
-        }
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to escalate ticket');
       }
-    });
+
+      setIsEscalating(false);
+      fetchTickets();
+      fetchActivities(ticketId);
+      if (selectedTicket?.id === ticketId) {
+        setSelectedTicket(prev => prev ? { ...prev, is_escalated: true, priority: 'critical', escalation_reason: reason } : null);
+      }
+    } catch (err: any) {
+      console.error('Error escalating ticket:', err);
+      alert(`Error: ${err.message}`);
+    }
   };
 
   const canEscalate = (ticket: Ticket) => {
@@ -723,6 +766,32 @@ export default function App() {
     } catch (err: any) {
       console.error('Error adding comment:', err);
       alert(`Error adding comment: ${err.message}`);
+    }
+  };
+
+  const handleLinkArticle = async (article: KnowledgeBaseArticle) => {
+    if (!currentUser || !selectedTicket) return;
+
+    try {
+      const response = await fetch(`/api/tickets/${selectedTicket.id}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: currentUser.id,
+          comment: `Reference Knowledge Base Article: ${article.title}\n\n${article.content.substring(0, 200)}...`
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        const errorMsg = typeof errorData.error === 'object' ? JSON.stringify(errorData.error) : (errorData.error || 'Failed to link article');
+        throw new Error(errorMsg);
+      }
+
+      fetchActivities(selectedTicket.id);
+    } catch (err: any) {
+      console.error('Error linking article:', err);
+      alert(`Error linking article: ${err.message}`);
     }
   };
 
@@ -994,7 +1063,7 @@ export default function App() {
           <UserManagement currentUser={currentUser} />
         ) : view === 'dashboard' && currentUser.role !== 'end_user' ? (
           <Dashboard 
-            tickets={tickets} 
+            tickets={allTickets} 
             onFilterStatus={setStatusFilter}
             onFilterPriority={setPriorityFilter}
             onFilterCategory={setCategoryFilter}
@@ -1090,6 +1159,22 @@ export default function App() {
                   ))}
                 </select>
               </div>
+
+              <div className="bg-white p-3 rounded-2xl border border-gray-200 flex items-center gap-3 dark:bg-[#1C1C1E] dark:border-gray-800">
+                <Tag className={`w-4 h-4 ${tagFilter ? 'text-indigo-600' : 'text-gray-400'}`} />
+                <input 
+                  type="text"
+                  placeholder="Filter by tag..."
+                  className="flex-1 text-sm bg-white border-none focus:ring-0 font-medium text-black placeholder:text-gray-400"
+                  value={tagFilter}
+                  onChange={(e) => setTagFilter(e.target.value)}
+                />
+                {tagFilter && (
+                  <button onClick={() => setTagFilter('')} className="text-gray-400 hover:text-gray-600">
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
             </div>
 
             {filteredTickets.length > 0 && (currentUser.role === 'it_lead' || currentUser.role === 'admin' || currentUser.role === 'technician') && (
@@ -1134,11 +1219,16 @@ export default function App() {
                     className={`p-4 rounded-2xl border transition-all cursor-pointer group relative overflow-hidden ${
                       selectedTicket?.id === ticket.id 
                         ? 'bg-indigo-50/50 border-indigo-600 shadow-md ring-1 ring-indigo-600 dark:bg-indigo-900/10 dark:border-indigo-500 dark:ring-indigo-500' 
-                        : 'bg-white border-gray-200 hover:border-indigo-300 hover:shadow-sm dark:bg-[#1C1C1E] dark:border-gray-800 dark:hover:border-indigo-700'
+                        : ticket.is_escalated
+                          ? 'bg-red-50/30 border-red-200 hover:border-red-300 dark:bg-red-900/5 dark:border-red-900/30'
+                          : 'bg-white border-gray-200 hover:border-indigo-300 hover:shadow-sm dark:bg-[#1C1C1E] dark:border-gray-800 dark:hover:border-indigo-700'
                     }`}
                   >
                     {selectedTicket?.id === ticket.id && (
-                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-600 dark:bg-indigo-500" />
+                      <div className={`absolute left-0 top-0 bottom-0 w-1 ${ticket.is_escalated ? 'bg-red-600' : 'bg-indigo-600 dark:bg-indigo-500'}`} />
+                    )}
+                    {ticket.is_escalated && selectedTicket?.id !== ticket.id && (
+                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-400/50" />
                     )}
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex items-center gap-2">
@@ -1176,6 +1266,18 @@ export default function App() {
                               Blocked
                             </span>
                           )}
+                          {ticket.sla_status && ticket.sla_status !== 'resolved' && (
+                            <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                              ticket.sla_status === 'breached' 
+                                ? 'border-red-600 bg-red-600 text-white' 
+                                : ticket.sla_status === 'approaching'
+                                  ? 'border-amber-500 bg-amber-500 text-white'
+                                  : 'border-emerald-500 bg-emerald-500 text-white'
+                            }`}>
+                              <Clock className="w-2.5 h-2.5" />
+                              SLA: {ticket.sla_status.replace('_', ' ')}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <span className="text-[10px] text-gray-400 font-mono dark:text-gray-500">#{ticket.id}</span>
@@ -1201,10 +1303,76 @@ export default function App() {
                         {formatDistanceToNow(new Date(ticket.created_at), { addSuffix: true })}
                       </span>
                     </div>
+                    {ticket.tags && ticket.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {ticket.tags.map(tag => (
+                          <button 
+                            key={tag} 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTagFilter(tag);
+                            }}
+                            className="px-1.5 py-0.5 bg-gray-50 text-gray-400 rounded-md text-[9px] font-bold uppercase tracking-wider dark:bg-gray-800 dark:text-gray-500 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+                          >
+                            #{tag}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </motion.div>
                 ))
               )}
             </div>
+
+            {/* Pagination Controls */}
+            {!isLoadingTickets && totalTickets > 0 && (
+              <div className="mt-6 flex items-center justify-between px-2">
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  Showing <span className="font-bold text-gray-900 dark:text-gray-200">{(currentPage - 1) * ticketsPerPage + 1}</span> to <span className="font-bold text-gray-900 dark:text-gray-200">{Math.min(currentPage * ticketsPerPage, totalTickets)}</span> of <span className="font-bold text-gray-900 dark:text-gray-200">{totalTickets}</span> tickets
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="p-2 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-[#1C1C1E] dark:border-gray-800 dark:text-gray-400 dark:hover:bg-gray-800"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  
+                  {Array.from({ length: Math.min(5, Math.ceil(totalTickets / ticketsPerPage)) }, (_, i) => {
+                    const totalPages = Math.ceil(totalTickets / ticketsPerPage);
+                    let pageNum = currentPage;
+                    if (currentPage <= 3) pageNum = i + 1;
+                    else if (currentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
+                    else pageNum = currentPage - 2 + i;
+                    
+                    if (pageNum <= 0 || pageNum > totalPages) return null;
+
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
+                          currentPage === pageNum
+                            ? 'bg-indigo-600 text-white shadow-md'
+                            : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 dark:bg-[#1C1C1E] dark:border-gray-800 dark:text-gray-400 dark:hover:bg-gray-800'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(Math.ceil(totalTickets / ticketsPerPage), prev + 1))}
+                    disabled={currentPage === Math.ceil(totalTickets / ticketsPerPage)}
+                    className="p-2 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-[#1C1C1E] dark:border-gray-800 dark:text-gray-400 dark:hover:bg-gray-800"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Detail View */}
@@ -1284,6 +1452,11 @@ export default function App() {
                               </button>
                             ))}
                           </div>
+                          <p className="text-[10px] text-gray-400 mt-1 dark:text-gray-500">
+                            SLA Target: <span className="font-bold text-gray-600 dark:text-gray-300">
+                              {format(addHours(new Date(), SLA_HOURS[newTicket.priority]), 'MMM d, h:mm a')}
+                            </span> ({SLA_HOURS[newTicket.priority]}h resolution)
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -1310,6 +1483,58 @@ export default function App() {
                         placeholder="Please provide more details about the issue..."
                         className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all resize-none bg-white text-black"
                       />
+                    </div>
+
+                    <KnowledgeBaseSuggestions 
+                      query={newTicket.title + ' ' + newTicket.description}
+                      onLinkArticle={(article) => {
+                        const linkText = `\n\n--- Reference: ${article.title} ---\n${article.content.substring(0, 100)}...\n`;
+                        setNewTicket({ ...newTicket, description: newTicket.description + linkText });
+                      }}
+                    />
+
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2 dark:text-gray-400">Tags</label>
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {newTicket.tags.map(tag => (
+                          <span key={tag} className="px-2 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-medium flex items-center gap-1">
+                            {tag}
+                            <button type="button" onClick={() => setNewTicket({ ...newTicket, tags: newTicket.tags.filter(t => t !== tag) })} className="hover:text-indigo-800">
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <input 
+                          type="text" 
+                          value={tagInput}
+                          onChange={e => setTagInput(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              if (tagInput.trim() && !newTicket.tags.includes(tagInput.trim())) {
+                                setNewTicket({ ...newTicket, tags: [...newTicket.tags, tagInput.trim()] });
+                                setTagInput('');
+                              }
+                            }
+                          }}
+                          placeholder="Add a tag and press Enter"
+                          className="flex-1 px-4 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white text-black text-sm"
+                        />
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            if (tagInput.trim() && !newTicket.tags.includes(tagInput.trim())) {
+                              setNewTicket({ ...newTicket, tags: [...newTicket.tags, tagInput.trim()] });
+                              setTagInput('');
+                            }
+                          }}
+                          className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all text-sm font-medium"
+                        >
+                          Add
+                        </button>
+                      </div>
                     </div>
 
                     <div className="pt-4 flex gap-3">
@@ -1391,11 +1616,60 @@ export default function App() {
                               value={editForm.priority}
                               onChange={e => setEditForm({ ...editForm, priority: e.target.value as TicketPriority })}
                             >
-                              <option value="low">Low</option>
-                              <option value="medium">Medium</option>
-                              <option value="high">High</option>
-                              <option value="critical">Critical</option>
+                              <option value="low">Low (48h SLA)</option>
+                              <option value="medium">Medium (24h SLA)</option>
+                              <option value="high">High (8h SLA)</option>
+                              <option value="critical">Critical (4h SLA)</option>
                             </select>
+                            <p className="text-[10px] text-gray-400 mt-1 dark:text-gray-500">
+                              New SLA Target: <span className="font-bold text-gray-600 dark:text-gray-300">
+                                {format(addHours(new Date(), SLA_HOURS[editForm.priority]), 'MMM d, h:mm a')}
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2 dark:text-gray-400">Tags</label>
+                          <div className="flex flex-wrap gap-2 mb-2">
+                            {editForm.tags.map(tag => (
+                              <span key={tag} className="px-2 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-medium flex items-center gap-1">
+                                {tag}
+                                <button type="button" onClick={() => setEditForm({ ...editForm, tags: editForm.tags.filter(t => t !== tag) })} className="hover:text-indigo-800">
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                          <div className="flex gap-2">
+                            <input 
+                              type="text" 
+                              value={editTagInput}
+                              onChange={e => setEditTagInput(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  if (editTagInput.trim() && !editForm.tags.includes(editTagInput.trim())) {
+                                    setEditForm({ ...editForm, tags: [...editForm.tags, editTagInput.trim()] });
+                                    setEditTagInput('');
+                                  }
+                                }
+                              }}
+                              placeholder="Add a tag and press Enter"
+                              className="flex-1 px-4 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white text-black text-sm"
+                            />
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                if (editTagInput.trim() && !editForm.tags.includes(editTagInput.trim())) {
+                                  setEditForm({ ...editForm, tags: [...editForm.tags, editTagInput.trim()] });
+                                  setEditTagInput('');
+                                }
+                              }}
+                              className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all text-sm font-medium"
+                            >
+                              Add
+                            </button>
                           </div>
                         </div>
 
@@ -1444,10 +1718,40 @@ export default function App() {
                               Blocked
                             </span>
                           )}
+                          {selectedTicket.sla_status && selectedTicket.sla_status !== 'resolved' && (
+                            <span className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border flex items-center gap-1 ${
+                              selectedTicket.sla_status === 'breached' 
+                                ? 'border-red-600 bg-red-600 text-white' 
+                                : selectedTicket.sla_status === 'approaching'
+                                  ? 'border-amber-500 bg-amber-500 text-white'
+                                  : 'border-emerald-500 bg-emerald-500 text-white'
+                            }`}>
+                              <Clock className="w-3 h-3" />
+                              SLA: {selectedTicket.sla_status.replace('_', ' ')}
+                            </span>
+                          )}
                           <span className="text-xs text-gray-400 font-mono dark:text-gray-500">#{selectedTicket.id}</span>
                         </div>
+
+                        {selectedTicket.tags && selectedTicket.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mb-4">
+                            {selectedTicket.tags.map(tag => (
+                              <button 
+                                key={tag} 
+                                onClick={() => {
+                                  setTagFilter(tag);
+                                  setSelectedTicket(null);
+                                }}
+                                className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-lg text-[10px] font-bold uppercase tracking-wider dark:bg-gray-800 dark:text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+                              >
+                                #{tag}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
                         <h2 className="text-2xl font-bold tracking-tight mb-2 dark:text-white">{selectedTicket.title}</h2>
-                        <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+                        <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
                           <div className="flex items-center gap-1.5">
                             <UserIcon className="w-4 h-4" />
                             <span>
@@ -1469,6 +1773,17 @@ export default function App() {
                               {formatDistanceToNow(new Date(selectedTicket.created_at), { addSuffix: true })}
                             </span>
                           </div>
+                          {selectedTicket.sla_target_time && selectedTicket.status !== 'completed' && selectedTicket.status !== 'acknowledged' && (
+                            <div className="flex items-center gap-1.5">
+                              <AlertCircle className={`w-4 h-4 ${selectedTicket.sla_status === 'breached' ? 'text-red-500' : 'text-amber-500'}`} />
+                              <span className="font-medium">
+                                Target: {format(new Date(selectedTicket.sla_target_time), 'MMM d, h:mm a')}
+                                <span className="text-xs text-gray-400 ml-1">
+                                  ({formatDistanceToNow(new Date(selectedTicket.sla_target_time), { addSuffix: true })})
+                                </span>
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -1481,7 +1796,8 @@ export default function App() {
                               description: selectedTicket.description,
                               category: selectedTicket.category,
                               priority: selectedTicket.priority,
-                              requested_for: selectedTicket.requested_for
+                              requested_for: selectedTicket.requested_for,
+                              tags: selectedTicket.tags || []
                             });
                             setIsEditingDetail(true);
                           }}
@@ -1517,6 +1833,15 @@ export default function App() {
                     <div className="prose prose-sm max-w-none text-gray-600 mb-8 dark:text-gray-400">
                       <p className="text-base leading-relaxed">{selectedTicket.description}</p>
                     </div>
+
+                    {selectedTicket.status !== 'completed' && selectedTicket.status !== 'acknowledged' && (
+                      <div className="mb-8">
+                        <KnowledgeBaseSuggestions 
+                          query={selectedTicket.title + ' ' + selectedTicket.description}
+                          onLinkArticle={handleLinkArticle}
+                        />
+                      </div>
+                    )}
 
                     {/* Resolution Details Section */}
                     {(selectedTicket.status === 'completed' || selectedTicket.status === 'acknowledged' || activities.some(a => a.action === 'update' && a.details !== 'Ticket details updated.')) && (
@@ -1735,9 +2060,16 @@ export default function App() {
                         )}
                         
                         {selectedTicket.is_escalated && (
-                          <div className="mt-2 p-3 bg-red-50 rounded-xl border border-red-100 flex items-center gap-2 dark:bg-red-900/10 dark:border-red-900/30">
-                            <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
-                            <span className="text-xs font-bold text-red-700 dark:text-red-300">This ticket has been escalated.</span>
+                          <div className="mt-2 p-4 bg-red-50 rounded-2xl border border-red-100 dark:bg-red-900/10 dark:border-red-900/30">
+                            <div className="flex items-center gap-2 mb-2">
+                              <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+                              <span className="text-xs font-bold text-red-700 dark:text-red-300 uppercase tracking-wider">Ticket Escalated</span>
+                            </div>
+                            {selectedTicket.escalation_reason && (
+                              <p className="text-sm text-red-600/80 dark:text-red-400/80 italic">
+                                "{selectedTicket.escalation_reason}"
+                              </p>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1745,33 +2077,54 @@ export default function App() {
                   )}
 
                   {/* User Controls: Acknowledge / Re-open */}
-                  {(currentUser.role === 'it_lead' || currentUser.role === 'admin' || (selectedTicket.created_by === currentUser.id || selectedTicket.requested_for === currentUser.id)) && selectedTicket.status === 'completed' && (
+                  {(currentUser.role === 'it_lead' || currentUser.role === 'admin' || (selectedTicket.created_by === currentUser.id || selectedTicket.requested_for === currentUser.id)) && (selectedTicket.status === 'completed' || selectedTicket.status === 'acknowledged') && (
                     <motion.div 
                       initial={{ opacity: 0, scale: 0.98 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      className="bg-green-50 rounded-3xl border border-green-200 p-8 shadow-sm dark:bg-green-900/10 dark:border-green-900/30"
+                      className={`${selectedTicket.status === 'completed' ? 'bg-green-50 border-green-200 dark:bg-green-900/10 dark:border-green-900/30' : 'bg-gray-50 border-gray-200 dark:bg-gray-900/10 dark:border-gray-800'} rounded-3xl border p-8 shadow-sm`}
                     >
                       <div className="flex items-center gap-4 mb-6">
-                        <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center dark:bg-green-900/40">
-                          <CheckCircle2 className="w-6 h-6 text-green-600 dark:text-green-400" />
+                        <div className={`w-12 h-12 rounded-full ${selectedTicket.status === 'completed' ? 'bg-green-100 dark:bg-green-900/40' : 'bg-gray-100 dark:bg-gray-800'} flex items-center justify-center`}>
+                          {selectedTicket.status === 'completed' ? (
+                            <CheckCircle2 className="w-6 h-6 text-green-600 dark:text-green-400" />
+                          ) : (
+                            <Inbox className="w-6 h-6 text-gray-600 dark:text-gray-400" />
+                          )}
                         </div>
                         <div>
-                          <h3 className="text-lg font-bold text-green-900 dark:text-green-300">Problem Resolved?</h3>
-                          <p className="text-sm text-green-700 dark:text-green-400/80">The technician has marked this issue as fixed. Please review the resolution and acknowledge if you are satisfied.</p>
+                          <h3 className={`text-lg font-bold ${selectedTicket.status === 'completed' ? 'text-green-900 dark:text-green-300' : 'text-gray-900 dark:text-gray-300'}`}>
+                            {selectedTicket.status === 'completed' ? 'Problem Resolved?' : 'Ticket Closed'}
+                          </h3>
+                          <p className={`text-sm ${selectedTicket.status === 'completed' ? 'text-green-700 dark:text-green-400/80' : 'text-gray-600 dark:text-gray-400/80'}`}>
+                            {selectedTicket.status === 'completed' 
+                              ? "The technician has marked this issue as fixed. Please review the resolution and acknowledge if you are satisfied."
+                              : "This ticket has been acknowledged and closed. If the problem persists, you can re-open it."}
+                          </p>
                         </div>
                       </div>
                       <div className="flex flex-col sm:flex-row gap-3">
+                        {selectedTicket.status === 'completed' && (
+                          <button 
+                            onClick={() => handleAcknowledge(selectedTicket.id)}
+                            className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-200 dark:shadow-none"
+                          >
+                            Acknowledge Resolution
+                          </button>
+                        )}
                         <button 
-                          onClick={() => handleAcknowledge(selectedTicket.id)}
-                          className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-200 dark:shadow-none"
+                          onClick={() => {
+                            setConfirmModal({
+                              isOpen: true,
+                              title: 'Re-open Ticket',
+                              message: 'Are you sure you want to re-open this ticket? It will be moved back to "Assigned" status.',
+                              type: 'info',
+                              confirmText: 'Re-open',
+                              onConfirm: () => handleStatusUpdate(selectedTicket.id, 'assigned')
+                            });
+                          }}
+                          className={`flex-1 bg-white border ${selectedTicket.status === 'completed' ? 'border-rose-200 text-rose-600 hover:bg-rose-50' : 'border-indigo-200 text-indigo-600 hover:bg-indigo-50'} py-3 rounded-xl font-bold transition-all dark:bg-transparent dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800`}
                         >
-                          Acknowledge Resolution
-                        </button>
-                        <button 
-                          onClick={() => handleStatusUpdate(selectedTicket.id, 'assigned')}
-                          className="flex-1 bg-white border border-rose-200 text-rose-600 py-3 rounded-xl font-bold hover:bg-rose-50 transition-all dark:bg-transparent dark:border-rose-900/50 dark:text-rose-400 dark:hover:bg-rose-900/20"
-                        >
-                          Not Resolved (Re-open)
+                          {selectedTicket.status === 'completed' ? 'Not Resolved (Re-open)' : 'Re-open Ticket'}
                         </button>
                       </div>
                     </motion.div>
@@ -1779,42 +2132,40 @@ export default function App() {
                 </>
               )}
 
-              {/* Add Comment Section */}
+              {/* Communication & History Section */}
               {!isEditingDetail && (
-                <div className="bg-white rounded-3xl border border-gray-200 p-8 shadow-sm dark:bg-[#1C1C1E] dark:border-gray-800">
-                  <h3 className="text-lg font-bold mb-4 flex items-center gap-2 dark:text-white">
-                    <MessageSquare className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                    Add Comment
-                  </h3>
-                  <form onSubmit={handleAddComment} className="flex gap-3">
-                    <input 
-                      type="text"
-                      value={comment}
-                      onChange={e => setComment(e.target.value)}
-                      placeholder="Type your message here..."
-                      className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all bg-white text-black"
-                    />
-                    <button 
-                      type="submit"
-                      disabled={!comment.trim()}
-                      className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-100 dark:shadow-none"
-                    >
-                      Send
-                    </button>
-                  </form>
-                </div>
-              )}
-
-              {/* Activity Log */}
+                <div className="space-y-6">
                   <div className="bg-white rounded-3xl border border-gray-200 overflow-hidden shadow-sm dark:bg-[#1C1C1E] dark:border-gray-800">
                     <div className="px-8 py-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50 dark:bg-gray-900/50 dark:border-gray-800">
                       <h3 className="text-lg font-bold flex items-center gap-2 dark:text-white">
                         <History className="w-5 h-5 text-gray-400 dark:text-gray-500" />
-                        Activity Log
+                        Activity & Comments
                       </h3>
                       <span className="text-xs text-gray-400 font-medium uppercase tracking-wider dark:text-gray-500">{activities.length} Events</span>
                     </div>
+                    
                     <div className="p-8">
+                      {/* Add Comment Input at the top of the history */}
+                      <div className="mb-10">
+                        <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-3 dark:text-gray-400">Add a comment</label>
+                        <form onSubmit={handleAddComment} className="flex gap-3">
+                          <input 
+                            type="text"
+                            value={comment}
+                            onChange={e => setComment(e.target.value)}
+                            placeholder="Type your message here..."
+                            className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all bg-white text-black"
+                          />
+                          <button 
+                            type="submit"
+                            disabled={!comment.trim()}
+                            className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-100 dark:shadow-none"
+                          >
+                            Send
+                          </button>
+                        </form>
+                      </div>
+
                       {isLoadingActivities ? (
                         <div className="flex flex-col items-center justify-center py-12">
                           <Loader2 className="w-8 h-8 text-indigo-600 animate-spin mb-2" />
@@ -1826,14 +2177,20 @@ export default function App() {
                             <div key={activity.id} className="relative flex items-start gap-6 group">
                               <div className={`mt-1.5 w-10 h-10 rounded-full border-4 border-white flex items-center justify-center shadow-sm z-10 shrink-0 dark:border-[#1C1C1E] ${
                                 activity.action === 'completed' ? 'bg-green-500' : 
-                                activity.action === 'assigned' ? 'bg-amber-500' :
+                                activity.action === 'assigned' || activity.action === 're-assigned' ? 'bg-amber-500' :
                                 activity.action === 'created' ? 'bg-blue-500' : 
-                                activity.action === 'comment' ? 'bg-indigo-600' : 'bg-indigo-500'
+                                activity.action === 'commented' ? 'bg-indigo-600' : 
+                                activity.action === 'escalated' ? 'bg-red-600' :
+                                activity.action === 'status_change' ? 'bg-slate-500' :
+                                'bg-indigo-500'
                               }`}>
                                 {activity.action === 'completed' ? <CheckCircle2 className="w-4 h-4 text-white" /> : 
-                                 activity.action === 'assigned' ? <UserIcon className="w-4 h-4 text-white" /> :
+                                 activity.action === 'assigned' || activity.action === 're-assigned' ? <UserIcon className="w-4 h-4 text-white" /> :
                                  activity.action === 'created' ? <Plus className="w-4 h-4 text-white" /> : 
-                                 activity.action === 'comment' ? <MessageSquare className="w-4 h-4 text-white" /> : <MessageSquare className="w-4 h-4 text-white" />}
+                                 activity.action === 'commented' ? <MessageSquare className="w-4 h-4 text-white" /> : 
+                                 activity.action === 'escalated' ? <AlertCircle className="w-4 h-4 text-white" /> :
+                                 activity.action === 'status_change' ? <Clock className="w-4 h-4 text-white" /> :
+                                 <History className="w-4 h-4 text-white" />}
                               </div>
                               <div className="flex-1">
                                 <div className="flex items-center justify-between mb-1">
@@ -1848,7 +2205,9 @@ export default function App() {
                                     {formatDistanceToNow(new Date(activity.created_at), { addSuffix: true })}
                                   </span>
                                 </div>
-                                <p className="text-sm text-gray-600 leading-relaxed dark:text-gray-400">{activity.details}</p>
+                                <div className={`p-4 rounded-2xl ${activity.action === 'commented' ? 'bg-indigo-50/50 border border-indigo-100 dark:bg-indigo-900/10 dark:border-indigo-900/30' : 'bg-gray-50/50 border border-gray-100 dark:bg-gray-800/30 dark:border-gray-800'}`}>
+                                  <p className="text-sm text-gray-600 leading-relaxed dark:text-gray-400">{activity.details}</p>
+                                </div>
                               </div>
                             </div>
                           ))}
@@ -1856,6 +2215,8 @@ export default function App() {
                       )}
                     </div>
                   </div>
+                </div>
+              )}
                 </motion.div>
               ) : (
                 <div className="h-[600px] flex flex-col items-center justify-center bg-white rounded-3xl border border-dashed border-gray-300 text-gray-400 dark:bg-[#1C1C1E] dark:border-gray-800 dark:text-gray-600">
@@ -1876,6 +2237,28 @@ export default function App() {
       isOpen={isSettingsOpen}
       onClose={() => setIsSettingsOpen(false)}
     />
+
+    <Modal
+      isOpen={isEscalating}
+      onClose={() => setIsEscalating(false)}
+      onConfirm={submitEscalation}
+      title="Escalate Ticket"
+      message="Please provide a reason for escalating this ticket. This will notify all IT Leads and set the priority to Critical."
+      type="warning"
+      confirmText="Escalate Now"
+    >
+      <div className="mt-4">
+        <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Escalation Reason</label>
+        <textarea
+          autoFocus
+          value={escalationReason}
+          onChange={(e) => setEscalationReason(e.target.value)}
+          placeholder="e.g., SLA breached, critical business impact, unresolved for 48h..."
+          className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none bg-white text-black text-sm"
+          rows={3}
+        />
+      </div>
+    </Modal>
 
     <Modal
       isOpen={confirmModal.isOpen}

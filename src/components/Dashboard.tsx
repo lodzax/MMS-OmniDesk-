@@ -182,7 +182,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
       doc.setTextColor(100, 116, 139);
       doc.text('Advanced analysis of ticket patterns and resolution workflows.', 14, 28);
 
-      const ai = new GoogleGenAI({ apiKey: (process.env as any).GEMINI_API_KEY });
+      const apiKey = process.env.GEMINI_API_KEY;
+      
+      if (!apiKey) {
+        console.warn('GEMINI_API_KEY is not defined. Skipping AI insights in report.');
+        // Fallback: Save PDF without AI insights if key is missing
+        doc.save(`OmniDesk_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+        setIsGenerating(false);
+        return;
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
       const model = 'gemini-3-flash-preview';
       
       // Fetch recent activities for analysis
@@ -303,9 +313,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       // Save the PDF
       doc.save(`OmniDesk_Report_${new Date().toISOString().split('T')[0]}.pdf`);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to generate report:', error);
-      alert('Failed to generate report. Please try again.');
+      alert(`Failed to generate report: ${error.message || 'Unknown error'}. Please check your GEMINI_API_KEY and console for details.`);
     } finally {
       setIsGenerating(false);
     }
@@ -391,6 +401,46 @@ export const Dashboard: React.FC<DashboardProps> = ({
           trendUp={true}
         />
       </div>
+
+      {/* Recent Escalations for IT Leads */}
+      {metrics.escalated > 0 && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-rose-50/50 rounded-3xl border border-rose-200 p-6 dark:bg-rose-900/5 dark:border-rose-900/30"
+        >
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-rose-100 rounded-xl dark:bg-rose-900/40">
+              <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400" />
+            </div>
+            <h3 className="font-bold text-rose-900 dark:text-rose-300">Active Escalations</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {tickets.filter(t => t.is_escalated && t.status !== 'completed' && t.status !== 'acknowledged').slice(0, 6).map(ticket => (
+              <div 
+                key={ticket.id}
+                onClick={() => handleChartClick('status', ticket.status)}
+                className="bg-white p-4 rounded-2xl border border-rose-100 shadow-sm cursor-pointer hover:shadow-md transition-all dark:bg-[#1C1C1E] dark:border-rose-900/20"
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-rose-100 text-rose-600 dark:bg-rose-900/40 dark:text-rose-400">
+                    {ticket.priority}
+                  </span>
+                  <span className="text-[10px] text-gray-400 font-mono">#{ticket.id}</span>
+                </div>
+                <h4 className="font-bold text-sm mb-1 text-gray-900 dark:text-white truncate">{ticket.title}</h4>
+                <p className="text-xs text-rose-600/80 dark:text-rose-400/80 italic line-clamp-2 mb-2">
+                  "{ticket.escalation_reason || 'No reason provided'}"
+                </p>
+                <div className="flex items-center justify-between text-[10px] text-gray-500">
+                  <span>{ticket.creator_name}</span>
+                  <span>{new Date(ticket.created_at).toLocaleDateString()}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
 
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

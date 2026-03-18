@@ -27,7 +27,11 @@ export interface Ticket {
   requester_name: string;
   technician_name: string | null;
   is_escalated: boolean;
+  escalation_reason?: string | null;
   is_blocked?: boolean;
+  sla_target_time: string | null;
+  sla_status: 'on_track' | 'approaching' | 'breached' | 'resolved';
+  tags: string[];
 }
 
 export interface Activity {
@@ -63,4 +67,14 @@ export interface Dependency {
   id: number;
   depends_on_id: string;
   ticket?: Partial<Ticket>;
+}
+
+export interface KnowledgeBaseArticle {
+  id: string;
+  title: string;
+  content: string;
+  category: TicketCategory | 'general';
+  tags: string[];
+  created_at: string;
+  updated_at: string;
 }

@@ -51,6 +51,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
   const [selectedUserForAudit, setSelectedUserForAudit] = useState<User | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [isLoadingAudit, setIsLoadingAudit] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchUsers();
@@ -58,13 +59,26 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
 
   const fetchUsers = async () => {
     setIsLoading(true);
+    setError(null);
     try {
       const response = await fetch('/api/users');
-      if (!response.ok) throw new Error('Failed to fetch users');
+      const contentType = response.headers.get('content-type');
+      
+      if (contentType && contentType.includes('text/html')) {
+        const text = await response.text();
+        console.error('Received HTML instead of JSON for /api/users:', text.substring(0, 200));
+        throw new Error('Server returned HTML instead of JSON. This usually means the API route is missing or the server is misconfigured.');
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown server error' }));
+        throw new Error(errorData.error || `Failed to fetch users (${response.status})`);
+      }
       const data = await response.json();
-      setUsers(data);
-    } catch (err) {
+      setUsers(data || []);
+    } catch (err: any) {
       console.error('Error fetching users:', err);
+      setError(err.message || 'Failed to fetch users');
     } finally {
       setIsLoading(false);
     }

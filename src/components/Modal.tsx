@@ -11,6 +11,7 @@ interface ModalProps {
   confirmText?: string;
   cancelText?: string;
   type?: 'danger' | 'warning' | 'info';
+  children?: React.ReactNode;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -21,7 +22,8 @@ export const Modal: React.FC<ModalProps> = ({
   message,
   confirmText = 'Confirm',
   cancelText = 'Cancel',
-  type = 'warning'
+  type = 'warning',
+  children
 }) => {
   const colors = {
     danger: 'bg-rose-50 text-rose-600 border-rose-100',
@@ -66,9 +68,15 @@ export const Modal: React.FC<ModalProps> = ({
               </div>
               
               <h3 className="text-xl font-bold text-gray-900 mb-2">{title}</h3>
-              <p className="text-gray-500 text-sm leading-relaxed mb-8 whitespace-pre-wrap">
+              <p className="text-gray-500 text-sm leading-relaxed mb-4 whitespace-pre-wrap">
                 {message}
               </p>
+
+              {children && (
+                <div className="mb-8">
+                  {children}
+                </div>
+              )}
 
               <div className="flex gap-3">
                 <button
