@@ -46,6 +46,20 @@ CREATE TABLE IF NOT EXISTS tickets (
   requested_for UUID REFERENCES users(id),
   assigned_to UUID REFERENCES users(id),
   is_escalated BOOLEAN DEFAULT FALSE,
+  escalation_reason TEXT,
+  sla_target_time TIMESTAMPTZ,
+  tags TEXT[] DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 4. Knowledge Base Table
+CREATE TABLE IF NOT EXISTS knowledge_base (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  category TEXT,
+  tags TEXT[] DEFAULT '{}',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -87,9 +101,9 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
-CREATE TRIGGER update_tickets_updated_at BEFORE UPDATE ON tickets FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
-CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
-CREATE TRIGGER update_technicians_updated_at BEFORE UPDATE ON technicians FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+CREATE OR REPLACE TRIGGER update_tickets_updated_at BEFORE UPDATE ON tickets FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+CREATE OR REPLACE TRIGGER update_users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+CREATE OR REPLACE TRIGGER update_technicians_updated_at BEFORE UPDATE ON technicians FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 -- 8. RBAC Helper Functions
 CREATE OR REPLACE FUNCTION handle_new_user()
@@ -144,38 +158,52 @@ ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 -- 9. Comprehensive RLS Policies
 
 -- Roles Table
+DROP POLICY IF EXISTS "Roles are viewable by everyone" ON roles;
 CREATE POLICY "Roles are viewable by everyone" ON roles FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Admins can manage roles" ON roles;
 CREATE POLICY "Admins can manage roles" ON roles FOR ALL USING (is_admin());
 
 -- Users Table
+DROP POLICY IF EXISTS "Users are viewable by everyone" ON users;
 CREATE POLICY "Users are viewable by everyone" ON users FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Users can insert their own profile" ON users;
 CREATE POLICY "Users can insert their own profile" ON users FOR INSERT WITH CHECK (auth.uid() = id OR is_admin());
+DROP POLICY IF EXISTS "Users can update own record" ON users;
 CREATE POLICY "Users can update own record" ON users FOR UPDATE USING (auth.uid() = id);
+DROP POLICY IF EXISTS "Admins can update any user" ON users;
 CREATE POLICY "Admins can update any user" ON users FOR UPDATE USING (is_admin());
 
 -- Technicians Table
+DROP POLICY IF EXISTS "Technicians are viewable by everyone" ON technicians;
 CREATE POLICY "Technicians are viewable by everyone" ON technicians FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Admins can manage technicians" ON technicians;
 CREATE POLICY "Admins can manage technicians" ON technicians FOR ALL USING (is_admin());
+DROP POLICY IF EXISTS "Technicians can update own status" ON technicians;
 CREATE POLICY "Technicians can update own status" ON technicians FOR UPDATE USING (auth.uid() = id);
 
 -- Tickets Table
+DROP POLICY IF EXISTS "Users can view their own tickets" ON tickets;
 CREATE POLICY "Users can view their own tickets" ON tickets FOR SELECT USING (
   auth.uid() = created_by OR 
   auth.uid() = requested_for OR 
   is_technician()
 );
 
+DROP POLICY IF EXISTS "Users can create tickets" ON tickets;
 CREATE POLICY "Users can create tickets" ON tickets FOR INSERT WITH CHECK (
   auth.uid() = created_by
 );
 
+DROP POLICY IF EXISTS "Technicians and Admins can update tickets" ON tickets;
 CREATE POLICY "Technicians and Admins can update tickets" ON tickets FOR UPDATE USING (
   is_technician() OR auth.uid() = created_by
 );
 
+DROP POLICY IF EXISTS "Admins can delete tickets" ON tickets;
 CREATE POLICY "Admins can delete tickets" ON tickets FOR DELETE USING (is_admin());
 
 -- Activities Table
+DROP POLICY IF EXISTS "Activities are viewable by ticket participants" ON activities;
 CREATE POLICY "Activities are viewable by ticket participants" ON activities FOR SELECT USING (
   EXISTS (
     SELECT 1 FROM tickets 
@@ -187,6 +215,7 @@ CREATE POLICY "Activities are viewable by ticket participants" ON activities FOR
   )
 );
 
+DROP POLICY IF EXISTS "Users can add activities to their tickets" ON activities;
 CREATE POLICY "Users can add activities to their tickets" ON activities FOR INSERT WITH CHECK (
   EXISTS (
     SELECT 1 FROM tickets 
@@ -198,8 +227,11 @@ CREATE POLICY "Users can add activities to their tickets" ON activities FOR INSE
 );
 
 -- Notifications Table
+DROP POLICY IF EXISTS "Users can view own notifications" ON notifications;
 CREATE POLICY "Users can view own notifications" ON notifications FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can update own notifications" ON notifications;
 CREATE POLICY "Users can update own notifications" ON notifications FOR UPDATE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "System can create notifications" ON notifications;
 CREATE POLICY "System can create notifications" ON notifications FOR INSERT WITH CHECK (true);
 
 -- 10. User Audit Log Table
@@ -216,7 +248,9 @@ CREATE TABLE IF NOT EXISTS user_audit_log (
 
 -- RLS for Audit Log
 ALTER TABLE user_audit_log ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Admins can view audit logs" ON user_audit_log;
 CREATE POLICY "Admins can view audit logs" ON user_audit_log FOR SELECT USING (is_admin());
+DROP POLICY IF EXISTS "System can insert audit logs" ON user_audit_log;
 CREATE POLICY "System can insert audit logs" ON user_audit_log FOR INSERT WITH CHECK (true);
 
 -- 11. Ticket Dependencies Table
@@ -230,5 +264,38 @@ CREATE TABLE IF NOT EXISTS ticket_dependencies (
 
 -- RLS for ticket_dependencies
 ALTER TABLE ticket_dependencies ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Dependencies are viewable by everyone" ON ticket_dependencies;
 CREATE POLICY "Dependencies are viewable by everyone" ON ticket_dependencies FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Technicians and Admins can manage dependencies" ON ticket_dependencies;
 CREATE POLICY "Technicians and Admins can manage dependencies" ON ticket_dependencies FOR ALL USING (is_technician());
+
+-- RLS for knowledge_base
+ALTER TABLE knowledge_base ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Knowledge base is viewable by everyone" ON knowledge_base;
+CREATE POLICY "Knowledge base is viewable by everyone" ON knowledge_base FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Admins can manage knowledge base" ON knowledge_base;
+CREATE POLICY "Admins can manage knowledge base" ON knowledge_base FOR ALL USING (is_admin());
+
+-- 12. Migration for existing tables (Add missing columns if they don't exist)
+DO $$
+BEGIN
+    -- Add columns to tickets table if they don't exist
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tickets' AND column_name = 'escalation_reason') THEN
+        ALTER TABLE tickets ADD COLUMN escalation_reason TEXT;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tickets' AND column_name = 'sla_target_time') THEN
+        ALTER TABLE tickets ADD COLUMN sla_target_time TIMESTAMPTZ;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tickets' AND column_name = 'tags') THEN
+        ALTER TABLE tickets ADD COLUMN tags TEXT[] DEFAULT '{}';
+    END IF;
+
+    -- Add columns to knowledge_base table if they don't exist
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'knowledge_base') THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'knowledge_base' AND column_name = 'tags') THEN
+            ALTER TABLE knowledge_base ADD COLUMN tags TEXT[] DEFAULT '{}';
+        END IF;
+    END IF;
+END $$;

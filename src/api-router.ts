@@ -879,8 +879,11 @@ router.patch("/tickets/:id", async (req, res) => {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
-    const updateData: any = { title, description, category, priority, updated_at: new Date().toISOString() };
-    
+    const updateData: any = { updated_at: new Date().toISOString() };
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (category !== undefined) updateData.category = category;
+    if (priority !== undefined) updateData.priority = priority;
     if (tags !== undefined) updateData.tags = tags;
 
     if (priority) {
