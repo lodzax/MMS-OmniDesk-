@@ -15,7 +15,10 @@ import {
   Mail,
   Calendar,
   History,
-  ArrowRight
+  ArrowRight,
+  Trash2,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -52,10 +55,84 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [isLoadingAudit, setIsLoadingAudit] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+  const [showBulkRoleDropdown, setShowBulkRoleDropdown] = useState(false);
 
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  const handleSelectUser = (userId: string) => {
+    if (userId === currentUser.id) return; // Prevent selecting self
+    setSelectedUserIds(prev => 
+      prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+    );
+  };
+
+  const handleSelectAll = () => {
+    const selectableUsers = filteredUsers.filter(u => u.id !== currentUser.id);
+    if (selectedUserIds.length === selectableUsers.length) {
+      setSelectedUserIds([]);
+    } else {
+      setSelectedUserIds(selectableUsers.map(u => u.id));
+    }
+  };
+
+  const handleBulkUpdateRole = async (newRole: Role) => {
+    if (selectedUserIds.length === 0) return;
+    setIsBulkUpdating(true);
+    setShowBulkRoleDropdown(false);
+    try {
+      const response = await fetch('/api/users/bulk-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_ids: selectedUserIds,
+          role: newRole,
+          changed_by: currentUser.id
+        })
+      });
+
+      if (!response.ok) throw new Error('Failed to update roles in bulk');
+      
+      const result = await response.json();
+      setUsers(prev => prev.map(u => selectedUserIds.includes(u.id) ? { ...u, role: newRole } : u));
+      setSelectedUserIds([]);
+      console.log(`Bulk updated ${result.count} users to ${newRole}`);
+    } catch (err: any) {
+      console.error('Error in bulk update:', err);
+      alert(`Error: ${err.message}`);
+    } finally {
+      setIsBulkUpdating(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedUserIds.length === 0) return;
+    if (!window.confirm(`Are you sure you want to delete ${selectedUserIds.length} users? This action cannot be undone.`)) return;
+    
+    setIsBulkUpdating(true);
+    try {
+      const response = await fetch('/api/users/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_ids: selectedUserIds
+        })
+      });
+
+      if (!response.ok) throw new Error('Failed to delete users in bulk');
+      
+      setUsers(prev => prev.filter(u => !selectedUserIds.includes(u.id)));
+      setSelectedUserIds([]);
+    } catch (err: any) {
+      console.error('Error in bulk delete:', err);
+      alert(`Error: ${err.message}`);
+    } finally {
+      setIsBulkUpdating(false);
+    }
+  };
 
   const fetchUsers = async () => {
     setIsLoading(true);
@@ -161,6 +238,82 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
         />
       </div>
 
+      <AnimatePresence>
+        {selectedUserIds.length > 0 && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="bg-indigo-600 p-4 rounded-2xl flex items-center justify-between shadow-lg shadow-indigo-200 dark:shadow-none"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white font-bold text-sm">
+                {selectedUserIds.length}
+              </div>
+              <span className="text-white font-bold text-sm">Users Selected</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <button 
+                  onClick={() => setShowBulkRoleDropdown(!showBulkRoleDropdown)}
+                  disabled={isBulkUpdating}
+                  className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-colors border border-white/20"
+                >
+                  <UserCog className="w-4 h-4" />
+                  Change Role
+                  <ChevronDown className="w-3 h-3" />
+                </button>
+                
+                <AnimatePresence>
+                  {showBulkRoleDropdown && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowBulkRoleDropdown(false)}></div>
+                      <motion.div 
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 10 }}
+                        className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl shadow-xl border border-gray-100 p-2 z-20 dark:bg-[#2C2C2E] dark:border-gray-800"
+                      >
+                        {(Object.keys(ROLE_CONFIG) as Role[]).map(roleKey => {
+                          const r = ROLE_CONFIG[roleKey];
+                          const RIcon = r.icon;
+                          return (
+                            <button
+                              key={roleKey}
+                              onClick={() => handleBulkUpdateRole(roleKey)}
+                              className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                            >
+                              <RIcon className="w-4 h-4 text-gray-400" />
+                              <span className="text-xs font-bold text-gray-900 dark:text-white">{r.label}</span>
+                            </button>
+                          );
+                        })}
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              <button 
+                onClick={handleBulkDelete}
+                disabled={isBulkUpdating}
+                className="flex items-center gap-2 px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white rounded-xl text-xs font-bold transition-colors shadow-sm"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete
+              </button>
+              
+              <button 
+                onClick={() => setSelectedUserIds([])}
+                className="p-2 text-white/60 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {isLoading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
@@ -171,6 +324,18 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50/50 dark:bg-gray-800/50">
+                  <th className="px-6 py-4 w-10">
+                    <button 
+                      onClick={handleSelectAll}
+                      className="text-gray-400 hover:text-indigo-600 transition-colors"
+                    >
+                      {selectedUserIds.length === filteredUsers.filter(u => u.id !== currentUser.id).length && selectedUserIds.length > 0 ? (
+                        <CheckSquare className="w-5 h-5 text-indigo-600" />
+                      ) : (
+                        <Square className="w-5 h-5" />
+                      )}
+                    </button>
+                  </th>
                   <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">User</th>
                   <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Role</th>
                   <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Joined</th>
@@ -181,9 +346,23 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                 {filteredUsers.map(user => {
                   const roleInfo = ROLE_CONFIG[user.role as Role] || ROLE_CONFIG.end_user;
                   const RoleIcon = roleInfo.icon;
+                  const isSelected = selectedUserIds.includes(user.id);
                   
                   return (
-                    <tr key={user.id} className="hover:bg-gray-50/50 transition-colors dark:hover:bg-gray-800/30">
+                    <tr key={user.id} className={`hover:bg-gray-50/50 transition-colors dark:hover:bg-gray-800/30 ${isSelected ? 'bg-indigo-50/30 dark:bg-indigo-900/10' : ''}`}>
+                      <td className="px-6 py-4">
+                        <button 
+                          onClick={() => handleSelectUser(user.id)}
+                          disabled={user.id === currentUser.id}
+                          className={`transition-colors ${user.id === currentUser.id ? 'opacity-20 cursor-not-allowed' : 'text-gray-300 hover:text-indigo-600'}`}
+                        >
+                          {isSelected ? (
+                            <CheckSquare className="w-5 h-5 text-indigo-600" />
+                          ) : (
+                            <Square className="w-5 h-5" />
+                          )}
+                        </button>
+                      </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className={`w-10 h-10 rounded-xl ${roleInfo.bg} flex items-center justify-center dark:bg-opacity-10`}>

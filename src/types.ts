@@ -32,6 +32,8 @@ export interface Ticket {
   sla_target_time: string | null;
   sla_status: 'on_track' | 'approaching' | 'breached' | 'resolved';
   tags: string[];
+  rating?: number | null;
+  resolved_at?: string | null;
 }
 
 export interface Activity {
@@ -52,6 +54,12 @@ export interface Technician {
   phone: string;
   status: 'available' | 'busy' | 'offline';
   created_at: string;
+  kpis?: {
+    resolved_count: number;
+    avg_resolution_time: number;
+    sla_compliance: number;
+    avg_rating: number;
+  };
 }
 
 export interface Notification {

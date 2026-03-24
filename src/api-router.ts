@@ -46,7 +46,15 @@ function sendNotification(userId: string, notification: any) {
 
 // Helper for Supabase errors
 function handleSupabaseError(res: express.Response, error: any, context: string) {
-  console.error(`Supabase Error [${context}]:`, error);
+  // Log the full error object more explicitly
+  console.error(`Supabase Error [${context}]:`, {
+    message: error?.message,
+    code: error?.code,
+    details: error?.details,
+    hint: error?.hint,
+    error: error // Log the whole thing too just in case
+  });
+  
   const message = error?.message || "An unexpected database error occurred";
   const code = error?.code || "UNKNOWN_ERROR";
   const details = error?.details || "";
@@ -223,24 +231,109 @@ router.get("/kb/search", async (req, res) => {
 });
 
 router.get("/technicians", async (req, res) => {
-  console.log("GET /api/technicians - Fetching all technicians");
+  console.log("GET /api/technicians - Fetching all technicians with KPIs");
   try {
-    const { data, error } = await supabase
+    const { data: techs, error: techError } = await supabase
       .from("technicians")
       .select(`*, user:users(name)`)
       .order('created_at', { ascending: false });
     
-    if (error) {
-      console.error("Supabase error fetching technicians:", error);
-      return handleSupabaseError(res, error, "get_technicians");
+    if (techError) {
+      console.error("Supabase error fetching technicians:", techError);
+      return handleSupabaseError(res, techError, "get_technicians");
+    }
+
+    let tickets: any[] = [];
+    try {
+      // Try to fetch all columns needed for KPIs
+      const { data: ticketData, error: ticketError } = await supabase
+        .from("tickets")
+        .select("assigned_to, status, rating, created_at, resolved_at, sla_target_time")
+        .not("assigned_to", "is", null);
+
+      if (ticketError) {
+        // Check for "column does not exist" error (Postgres code 42703)
+        if (ticketError.code === '42703') {
+          console.warn("Supabase schema mismatch: One or more KPI columns (rating, resolved_at, sla_target_time) are missing from the 'tickets' table.");
+          console.warn("To fix this, please run the migration SQL at the bottom of 'supabase_schema.sql' in your Supabase SQL Editor.");
+        } else {
+          console.error("Supabase error fetching tickets for KPIs (non-fatal):", 
+            ticketError.message, 
+            "Code:", ticketError.code, 
+            "Details:", ticketError.details, 
+            "Hint:", ticketError.hint
+          );
+        }
+        
+        // Fallback: Try to fetch only essential columns if the full query fails
+        // This handles cases where columns like 'rating' or 'resolved_at' might be missing
+        console.log("Attempting fallback query for basic technician data...");
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from("tickets")
+          .select("assigned_to, status, created_at")
+          .not("assigned_to", "is", null);
+          
+        if (fallbackError) {
+          console.error("Fallback query also failed:", fallbackError.message);
+        } else {
+          tickets = fallbackData || [];
+          console.log(`Fallback query successful, fetched ${tickets.length} tickets for basic KPIs.`);
+        }
+      } else {
+        tickets = ticketData || [];
+      }
+    } catch (err: any) {
+      console.error("Unexpected error fetching tickets for KPIs (non-fatal):", err.message);
     }
     
-    const formatted = (data || []).map(t => ({
-      ...t,
-      name: (t as any).user?.name || 'Unknown'
-    }));
+    const formatted = (techs || []).map(t => {
+      const techTickets = tickets.filter(ticket => ticket.assigned_to === t.id);
+      const resolvedTickets = techTickets.filter(ticket => ticket.status === 'completed' || ticket.status === 'acknowledged');
+      
+      // Calculate Avg Resolution Time (in hours)
+      let totalResolutionTime = 0;
+      let resolvedWithTime = 0;
+      resolvedTickets.forEach(ticket => {
+        if (ticket.resolved_at && ticket.created_at) {
+          const resTime = new Date(ticket.resolved_at).getTime() - new Date(ticket.created_at).getTime();
+          totalResolutionTime += resTime;
+          resolvedWithTime++;
+        }
+      });
+      const avgResolutionTime = resolvedWithTime > 0 ? (totalResolutionTime / resolvedWithTime) / (1000 * 60 * 60) : 0;
+
+      // Calculate SLA Compliance
+      let slaCompliant = 0;
+      let ticketsWithSla = 0;
+      resolvedTickets.forEach(ticket => {
+        if (ticket.sla_target_time && ticket.resolved_at) {
+          ticketsWithSla++;
+          if (new Date(ticket.resolved_at) <= new Date(ticket.sla_target_time)) {
+            slaCompliant++;
+          }
+        }
+      });
+      const slaCompliance = ticketsWithSla > 0 ? (slaCompliant / ticketsWithSla) * 100 : 100;
+
+      // Calculate Avg Rating
+      const ratedTickets = techTickets.filter(ticket => ticket.rating !== null);
+      const avgRating = ratedTickets.length > 0 
+        ? ratedTickets.reduce((acc, ticket) => acc + (ticket.rating || 0), 0) / ratedTickets.length 
+        : 0;
+
+      return {
+        ...t,
+        name: (t as any).user?.name || 'Unknown',
+        kpis: {
+          resolved_count: resolvedTickets.length,
+          avg_resolution_time: Number(avgResolutionTime.toFixed(1)),
+          sla_compliance: Number(slaCompliance.toFixed(1)),
+          avg_rating: Number(avgRating.toFixed(1))
+        }
+      };
+    });
     
-    console.log(`Successfully fetched ${formatted.length} technicians`);
+    console.log(`Successfully fetched ${formatted.length} technicians with KPIs`);
     res.json(formatted);
   } catch (err: any) {
     console.error("Unexpected error in GET /api/technicians:", err);
@@ -402,7 +495,18 @@ router.get("/users", async (req, res) => {
 
 router.get("/users/:id", async (req, res) => {
   const { id } = req.params;
-  console.log(`GET /api/users/${id} - Fetching user profile`);
+  
+  // Validate ID format (should be a UUID)
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(id)) {
+    console.warn(`[API] Invalid user ID format received: ${id}`);
+    return res.status(400).json({ 
+      error: "Invalid user ID format. Expected a UUID.",
+      code: "INVALID_ID_FORMAT"
+    });
+  }
+
+  console.log(`[API] GET /api/users/${id} - Fetching user profile`);
   
   try {
     const { data: profile, error: profileError } = await supabase
@@ -412,44 +516,157 @@ router.get("/users/:id", async (req, res) => {
       .single();
     
     if (!profileError && profile) {
-      console.log(`Successfully fetched profile for user ${id}`);
+      console.log(`[API] Successfully fetched profile for user ${id}`);
       return res.json(profile);
     }
     
     if (profileError && profileError.code !== 'PGRST116') { // PGRST116 is "no rows returned"
-      console.error(`Supabase error fetching profile for user ${id}:`, profileError);
+      console.error(`[API] Supabase error fetching profile for user ${id}:`, {
+        message: profileError.message,
+        code: profileError.code,
+        details: profileError.details,
+        hint: profileError.hint
+      });
       return handleSupabaseError(res, profileError, "get_user_profile");
     }
 
-    if (!supabase.auth.admin) {
-      console.warn(`User profile ${id} not found and Admin API unavailable.`);
-      return res.status(404).json({ error: "User profile not found and Admin API unavailable." });
+    // If profile not found in table, try to get from Auth and auto-create
+    // CRITICAL: Check if supabase.auth and admin exist to avoid crashes
+    if (!supabase.auth || !supabase.auth.admin) {
+      console.warn(`[API] User profile ${id} not found and Admin API unavailable (likely using public key).`);
+      return res.status(404).json({ 
+        error: "User profile not found. Please ensure you have signed in correctly.",
+        code: "PROFILE_NOT_FOUND"
+      });
     }
 
-    const { data: { user }, error: authError } = await supabase.auth.admin.getUserById(id);
-    if (authError || !user) {
-      console.warn(`User ${id} not found in Auth or Profile table.`);
-      return res.status(404).json({ error: "User not found in Auth or Profile table." });
-    }
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.admin.getUserById(id);
+      if (authError || !user) {
+        console.warn(`[API] User ${id} not found in Auth or Profile table.`);
+        return res.status(404).json({ 
+          error: "User not found. Please sign in again.",
+          code: "USER_NOT_FOUND"
+        });
+      }
 
-    const profileData: any = {
-      id: user.id,
-      name: user.user_metadata?.name || user.email?.split('@')[0] || "New User",
-      role: user.user_metadata?.role || "end_user",
-      email: user.email
-    };
-    
-    const { data: newProfile, error: insertError } = await supabase.from("users").upsert([profileData]).select().single();
-    if (insertError) {
-      console.error("Error auto-creating user profile:", insertError);
-      return res.status(500).json({ error: `Failed to auto-create user profile: ${insertError.message}` });
+      const profileData: any = {
+        id: user.id,
+        name: user.user_metadata?.name || user.email?.split('@')[0] || "New User",
+        role: user.user_metadata?.role || "end_user",
+        email: user.email
+      };
+      
+      const { data: newProfile, error: insertError } = await supabase.from("users").upsert([profileData]).select().single();
+      if (insertError) {
+        console.error("[API] Error auto-creating user profile:", insertError);
+        return res.status(500).json({ error: `Failed to auto-create user profile: ${insertError.message}` });
+      }
+      
+      console.log(`[API] Successfully auto-created profile for user ${id}`);
+      return res.json(newProfile);
+    } catch (authErr: any) {
+      console.error(`[API] Auth Admin API error for user ${id}:`, authErr.message);
+      return res.status(404).json({ 
+        error: "User profile not found and Auth API failed.",
+        code: "AUTH_API_ERROR"
+      });
     }
-    
-    console.log(`Successfully auto-created profile for user ${id}`);
-    return res.json(newProfile);
   } catch (err: any) {
-    console.error(`Unexpected error in GET /api/users/${id}:`, err);
+    console.error(`[API] Unexpected error in GET /api/users/${id}:`, err);
     return res.status(500).json({ error: err.message || "An unexpected error occurred while fetching user profile" });
+  }
+});
+
+router.post("/users/bulk-update", async (req, res) => {
+  const { user_ids, role, changed_by } = req.body;
+  
+  if (!user_ids || !Array.isArray(user_ids) || user_ids.length === 0) {
+    return res.status(400).json({ error: "No user IDs provided" });
+  }
+
+  console.log(`POST /api/users/bulk-update - Updating ${user_ids.length} users to role ${role} by ${changed_by}`);
+  
+  try {
+    // Fetch old data for audit logs
+    const { data: oldUsers, error: fetchError } = await supabase
+      .from("users")
+      .select("*")
+      .in("id", user_ids);
+
+    if (fetchError) {
+      console.error("Error fetching users for bulk update:", fetchError);
+      return handleSupabaseError(res, fetchError, "get_users_for_bulk_update");
+    }
+
+    const { data, error } = await supabase
+      .from("users")
+      .update({ role })
+      .in("id", user_ids)
+      .select();
+
+    if (error) {
+      console.error("Supabase error in bulk update:", error);
+      return handleSupabaseError(res, error, "bulk_update_users");
+    }
+
+    // Log the changes
+    const auditEntries = oldUsers.map(oldUser => ({
+      user_id: oldUser.id,
+      changed_by: changed_by || null,
+      old_role: oldUser.role,
+      new_role: role,
+      old_name: oldUser.name,
+      new_name: oldUser.name
+    }));
+
+    if (auditEntries.length > 0) {
+      await supabase.from("user_audit_log").insert(auditEntries);
+    }
+
+    // If role was updated to technician, ensure they are in the technicians table
+    if (role === 'technician') {
+      const techEntries = user_ids.map(id => ({ id, status: 'available' }));
+      const { error: techError } = await supabase.from("technicians").upsert(techEntries);
+      if (techError) console.error("Error auto-creating technician records in bulk:", techError);
+    }
+    
+    console.log(`Successfully updated ${data.length} users`);
+    res.json({ count: data.length, users: data });
+  } catch (err: any) {
+    console.error("Unexpected error in POST /api/users/bulk-update:", err);
+    res.status(500).json({ error: err.message || "An unexpected error occurred during bulk update" });
+  }
+});
+
+router.post("/users/bulk-delete", async (req, res) => {
+  const { user_ids } = req.body;
+  
+  if (!user_ids || !Array.isArray(user_ids) || user_ids.length === 0) {
+    return res.status(400).json({ error: "No user IDs provided" });
+  }
+
+  console.log(`POST /api/users/bulk-delete - Deleting ${user_ids.length} users`);
+  
+  try {
+    const { error } = await supabase
+      .from("users")
+      .delete()
+      .in("id", user_ids);
+
+    if (error) {
+      console.error("Supabase error in bulk delete:", error);
+      return handleSupabaseError(res, error, "bulk_delete_users");
+    }
+    
+    // Also delete from technicians if they were there
+    await supabase.from("technicians").delete().in("id", user_ids);
+    
+    console.log(`Successfully deleted ${user_ids.length} users`);
+    res.json({ success: true, count: user_ids.length });
+  } catch (err: any) {
+    console.error("Unexpected error in POST /api/users/bulk-delete:", err);
+    res.status(500).json({ error: err.message || "An unexpected error occurred during bulk delete" });
   }
 });
 
@@ -601,7 +818,8 @@ router.get("/tickets", async (req, res) => {
     if (category && category !== 'all') query = query.eq('category', category);
     if (tag && tag !== '') query = query.contains('tags', [tag]);
     if (search) {
-      query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%,tags.cs.{${search}}`);
+      // Simplified search to avoid potential issues with array column 'tags' in .or()
+      query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
     }
 
     const { data: tickets, error, count } = await query
@@ -615,50 +833,19 @@ router.get("/tickets", async (req, res) => {
     
     if (!tickets) return res.json({ tickets: [], totalCount: 0 });
 
-    const formattedTickets = await Promise.all(tickets.map(async (t) => {
-      // Check if blocked
-      const { data: deps, error: depError } = await supabase
-        .from("ticket_dependencies")
-        .select("ticket:tickets!ticket_dependencies_depends_on_id_fkey(status)")
-        .eq("ticket_id", t.id);
-      
-      if (depError) console.error(`Error fetching dependencies for ticket ${t.id}:`, depError);
-      
-      const isBlocked = deps?.some(d => (d.ticket as any)?.status !== 'completed' && (d.ticket as any)?.status !== 'acknowledged') || false;
+    // Fetch dependencies for all tickets in one go to avoid N+1 queries
+    const ticketIds = tickets.map(t => t.id);
+    const { data: allDeps, error: depsError } = await supabase
+      .from("ticket_dependencies")
+      .select("ticket_id, depends_on_id, ticket:tickets!ticket_dependencies_depends_on_id_fkey(status)")
+      .in("ticket_id", ticketIds);
+
+    if (depsError) console.error("Error fetching dependencies for tickets:", depsError);
+
+    const formattedTickets = tickets.map((t) => {
+      const deps = allDeps?.filter(d => d.ticket_id === t.id) || [];
+      const isBlocked = deps.some(d => (d.ticket as any)?.status !== 'completed' && (d.ticket as any)?.status !== 'acknowledged');
       const slaStatus = calculateSlaStatus(t.sla_target_time, t.status);
-
-      // If breached and not already notified (we'd need a field for this, but let's just send for now if it's breached)
-      // In a real app, we'd track if the breach notification was already sent.
-      if (slaStatus === 'breached' && t.status !== 'completed' && t.status !== 'acknowledged') {
-        // Notify assigned technician or IT Leads
-        const recipients = t.assigned_to ? [t.assigned_to] : [];
-        if (recipients.length === 0) {
-          // Fetch IT Leads if no one is assigned
-          const { data: leads } = await supabase.from("users").select("id").eq("role", "it_lead");
-          if (leads) recipients.push(...leads.map(l => l.id));
-        }
-
-        for (const recipientId of recipients) {
-          const message = `SLA BREACH: Ticket #${t.id} ("${t.title}") has exceeded its target resolution time.`;
-          // Check if notification already exists for this breach to avoid spamming
-          const { data: existingNotif } = await supabase
-            .from("notifications")
-            .select("id")
-            .eq("user_id", recipientId)
-            .eq("ticket_id", t.id)
-            .ilike("message", "SLA BREACH%")
-            .limit(1);
-
-          if (!existingNotif || existingNotif.length === 0) {
-            const { data: notification, error: notifError } = await supabase
-              .from("notifications")
-              .insert([{ user_id: recipientId, message, ticket_id: t.id }])
-              .select()
-              .single();
-            if (!notifError) sendNotification(recipientId, notification);
-          }
-        }
-      }
 
       return {
         ...t,
@@ -668,7 +855,7 @@ router.get("/tickets", async (req, res) => {
         is_blocked: isBlocked,
         sla_status: slaStatus
       };
-    }));
+    });
     
     console.log(`Successfully fetched ${formattedTickets.length} tickets, total: ${count}`);
     res.json({
@@ -1050,7 +1237,11 @@ router.patch("/tickets/:id/complete", async (req, res) => {
       return res.status(403).json({ error: "Unauthorized. Only the assigned technician or IT Lead can complete the ticket." });
     }
 
-    const { error: updateError } = await supabase.from("tickets").update({ status: 'completed', updated_at: new Date().toISOString() }).eq("id", id);
+    const { error: updateError } = await supabase.from("tickets").update({ 
+      status: 'completed', 
+      resolved_at: new Date().toISOString(),
+      updated_at: new Date().toISOString() 
+    }).eq("id", id);
     if (updateError) return handleSupabaseError(res, updateError, "update_ticket_status_complete");
 
     const { error: activityError } = await supabase.from("activities").insert([{ ticket_id: id, user_id: technician_id, action: "completed", details: "Technician marked the problem as fixed." }]);
@@ -1111,6 +1302,33 @@ router.patch("/tickets/:id/acknowledge", async (req, res) => {
   } catch (err: any) {
     console.error(`Unexpected error in PATCH /api/tickets/${id}/acknowledge:`, err);
     res.status(500).json({ error: err.message || "An unexpected error occurred while acknowledging ticket" });
+  }
+});
+
+router.patch("/tickets/:id/rate", async (req, res) => {
+  const { id } = req.params;
+  const { rating, user_id } = req.body;
+  console.log(`PATCH /api/tickets/${id}/rate - Rating ticket by user ${user_id}`);
+  
+  try {
+    const { data: ticket, error: ticketError } = await supabase.from("tickets").select("created_by, requested_for").eq("id", id).single();
+    if (ticketError) return handleSupabaseError(res, ticketError, "get_ticket_info");
+    
+    if (ticket.created_by !== user_id && ticket.requested_for !== user_id) {
+      console.warn(`User ${user_id} unauthorized to rate ticket ${id}`);
+      return res.status(403).json({ error: "Unauthorized. Only the ticket creator or requester can rate the ticket." });
+    }
+
+    const { error: updateError } = await supabase.from("tickets").update({ rating }).eq("id", id);
+    if (updateError) return handleSupabaseError(res, updateError, "update_ticket_rating");
+
+    await supabase.from("activities").insert([{ ticket_id: id, user_id, action: "rated", details: `User rated the service: ${rating}/5` }]);
+    
+    console.log(`Ticket ${id} rated successfully`);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error(`Unexpected error in PATCH /api/tickets/${id}/rate:`, err);
+    res.status(500).json({ error: err.message || "An unexpected error occurred while rating ticket" });
   }
 });
 

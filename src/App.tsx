@@ -31,6 +31,7 @@ import {
   Filter,
   LogOut,
   ShieldCheck,
+  Star,
   Bell,
   X,
   Search,
@@ -176,34 +177,75 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchUserProfile = async (userId: string) => {
+  const fetchWithRetry = async (url: string, options: RequestInit = {}, retries = 3, delay = 1000): Promise<Response> => {
     try {
-      const response = await fetch(`/api/users/${userId}`);
-      const contentType = response.headers.get('content-type');
+      const response = await fetch(url, options);
       
-      if (contentType && contentType.includes('text/html')) {
-        const text = await response.text();
-        console.error('Received HTML instead of JSON:', text.substring(0, 200));
-        throw new Error('Server returned HTML instead of JSON. This usually means the API route is missing and falling back to index.html.');
+      // Handle potential HTML response when JSON is expected
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('text/html') && retries > 0) {
+        console.warn(`Received HTML instead of JSON for ${url}, retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return fetchWithRetry(url, options, retries - 1, delay * 2);
       }
 
+      // Retry on 5xx errors
+      if (response.status >= 500 && retries > 0) {
+        console.warn(`Server error ${response.status} for ${url}, retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return fetchWithRetry(url, options, retries - 1, delay * 2);
+      }
+      
+      return response;
+    } catch (err: any) {
+      // Retry on network errors
+      if (err.message.includes('Failed to fetch') && retries > 0) {
+        console.warn(`Network error for ${url}, retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return fetchWithRetry(url, options, retries - 1, delay * 2);
+      }
+      throw err;
+    }
+  };
+
+  const fetchUserProfile = async (userId: string) => {
+    if (!userId || userId === 'undefined') {
+      console.warn('fetchUserProfile called with invalid userId:', userId);
+      setIsAuthLoading(false);
+      return;
+    }
+
+    try {
+      console.log(`Fetching profile for user: ${userId}`);
+      const response = await fetchWithRetry(`/api/users/${userId}`);
+      
       if (!response.ok) {
-        const errorData = await response.json();
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          errorData = { error: `Server error (${response.status})` };
+        }
+
         if (response.status === 404) {
           console.warn('User profile not found, signing out...');
           supabase.auth.signOut();
+          throw new Error(errorData.error || 'User profile not found');
         }
-        throw new Error(errorData.error || 'Failed to fetch profile');
+        
+        throw new Error(errorData.error || `Failed to fetch profile (${response.status})`);
       }
+
       const data = await response.json();
       if (data) {
+        console.log('Profile fetched successfully:', data.name);
         setCurrentUser(data);
       }
     } catch (err: any) {
       console.error('Error fetching profile:', err);
       // Only show alert if it's not a background refresh
-      if (err.message !== 'Failed to fetch profile') {
-        alert(`Error fetching profile: ${err.message}`);
+      if (!err.message.includes('Failed to fetch')) {
+        alert(`Error fetching profile: ${err.message}. Please try refreshing the page.`);
       }
     } finally {
       setIsAuthLoading(false);
@@ -244,15 +286,8 @@ export default function App() {
 
   const fetchUsers = async () => {
     try {
-      const response = await fetch('/api/users');
-      const contentType = response.headers.get('content-type');
+      const response = await fetchWithRetry('/api/users');
       
-      if (contentType && contentType.includes('text/html')) {
-        const text = await response.text();
-        console.error('Received HTML instead of JSON for /api/users:', text.substring(0, 200));
-        throw new Error('Server returned HTML instead of JSON. This usually means the API route is missing or the server is misconfigured.');
-      }
-
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown server error' }));
         throw new Error(errorData.error || `Failed to fetch users (${response.status})`);
@@ -261,8 +296,6 @@ export default function App() {
       setUsers(data || []);
     } catch (err: any) {
       console.error('Error fetching users:', err);
-      // We don't alert here to avoid spamming the main app view, 
-      // but we log it clearly.
     }
   };
 
@@ -281,7 +314,7 @@ export default function App() {
         search: searchTerm
       });
 
-      const response = await fetch(`/api/tickets?${params.toString()}`);
+      const response = await fetchWithRetry(`/api/tickets?${params.toString()}`);
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Server error (${response.status}): ${errorText.substring(0, 100)}`);
@@ -309,7 +342,7 @@ export default function App() {
         limit: '1000', // Fetch a large enough amount for the dashboard
         user_id: currentUser.id
       });
-      const response = await fetch(`/api/tickets?${params.toString()}`);
+      const response = await fetchWithRetry(`/api/tickets?${params.toString()}`);
       if (response.ok) {
         const data = await response.json();
         setAllTickets(data.tickets);
@@ -328,7 +361,7 @@ export default function App() {
   const fetchActivities = async (ticketId: string) => {
     setIsLoadingActivities(true);
     try {
-      const response = await fetch(`/api/tickets/${ticketId}/activities`);
+      const response = await fetchWithRetry(`/api/tickets/${ticketId}/activities`);
       if (!response.ok) throw new Error('Failed to fetch activities');
       const data = await response.json();
       setActivities(data);
@@ -341,7 +374,7 @@ export default function App() {
 
   const fetchDependencies = async (ticketId: string) => {
     try {
-      const response = await fetch(`/api/tickets/${ticketId}/dependencies`);
+      const response = await fetchWithRetry(`/api/tickets/${ticketId}/dependencies`);
       if (!response.ok) throw new Error('Failed to fetch dependencies');
       const data = await response.json();
       setDependencies(data);
@@ -389,7 +422,7 @@ export default function App() {
 
   const fetchNotifications = async (userId: string) => {
     try {
-      const response = await fetch(`/api/notifications/${userId}`);
+      const response = await fetchWithRetry(`/api/notifications/${userId}`);
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Server error (${response.status}): ${errorText.substring(0, 100)}`);
@@ -638,6 +671,34 @@ export default function App() {
       if (selectedTicket?.id === ticketId) setSelectedTicket(prev => prev ? { ...prev, status: 'acknowledged' } : null);
     } catch (err: any) {
       console.error('Error acknowledging ticket:', err);
+      alert(`Error: ${err.message}`);
+    }
+  };
+
+  const handleRateTicket = async (ticketId: string, rating: number) => {
+    if (!currentUser) return;
+    try {
+      const response = await fetch(`/api/tickets/${ticketId}/rate`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: currentUser.id,
+          rating
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to rate ticket');
+      }
+
+      fetchTickets();
+      fetchActivities(ticketId);
+      if (selectedTicket?.id === ticketId) {
+        setSelectedTicket(prev => prev ? { ...prev, rating } : null);
+      }
+    } catch (err: any) {
+      console.error('Error rating ticket:', err);
       alert(`Error: ${err.message}`);
     }
   };
@@ -2141,6 +2202,36 @@ export default function App() {
                           {selectedTicket.status === 'completed' ? 'Not Resolved (Re-open)' : 'Re-open Ticket'}
                         </button>
                       </div>
+
+                      {/* Rating Section */}
+                      {(selectedTicket.status === 'completed' || selectedTicket.status === 'acknowledged') && 
+                       (selectedTicket.created_by === currentUser.id || selectedTicket.requested_for === currentUser.id) && (
+                        <div className="mt-8 pt-8 border-t border-gray-100 dark:border-gray-800">
+                          <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-4">How would you rate the resolution?</h4>
+                          <div className="flex items-center gap-2">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <button
+                                key={star}
+                                onClick={() => handleRateTicket(selectedTicket.id, star)}
+                                className="p-1 transition-transform hover:scale-110"
+                              >
+                                <Star 
+                                  className={`w-8 h-8 ${
+                                    (selectedTicket.rating || 0) >= star 
+                                      ? 'fill-amber-400 text-amber-400' 
+                                      : 'text-gray-300 dark:text-gray-700'
+                                  }`} 
+                                />
+                              </button>
+                            ))}
+                            {selectedTicket.rating && (
+                              <span className="ml-3 text-sm font-bold text-amber-600 dark:text-amber-400">
+                                {selectedTicket.rating}/5 Rated
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </motion.div>
                   )}
                 </>

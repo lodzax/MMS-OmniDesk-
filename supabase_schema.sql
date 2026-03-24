@@ -49,6 +49,8 @@ CREATE TABLE IF NOT EXISTS tickets (
   escalation_reason TEXT,
   sla_target_time TIMESTAMPTZ,
   tags TEXT[] DEFAULT '{}',
+  rating INTEGER CHECK (rating >= 1 AND rating <= 5),
+  resolved_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -290,6 +292,14 @@ BEGIN
 
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tickets' AND column_name = 'tags') THEN
         ALTER TABLE tickets ADD COLUMN tags TEXT[] DEFAULT '{}';
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tickets' AND column_name = 'rating') THEN
+        ALTER TABLE tickets ADD COLUMN rating INTEGER CHECK (rating >= 1 AND rating <= 5);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tickets' AND column_name = 'resolved_at') THEN
+        ALTER TABLE tickets ADD COLUMN resolved_at TIMESTAMPTZ;
     END IF;
 
     -- Add columns to knowledge_base table if they don't exist

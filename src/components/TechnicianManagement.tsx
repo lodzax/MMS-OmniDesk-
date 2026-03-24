@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, Technician } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, User as UserIcon, Phone, Briefcase, CheckCircle2, XCircle, Clock, Loader2, Search, Edit, Trash2 } from 'lucide-react';
+import { Plus, User as UserIcon, Phone, Briefcase, CheckCircle2, XCircle, Clock, Loader2, Search, Edit, Trash2, ShieldCheck, Star, TrendingUp } from 'lucide-react';
 
 interface TechnicianManagementProps {
   users: User[];
@@ -231,6 +231,39 @@ export const TechnicianManagement: React.FC<TechnicianManagementProps> = ({ user
                   <span>{tech.phone || 'No phone set'}</span>
                 </div>
               </div>
+
+              {tech.kpis && (
+                <div className="mt-6 grid grid-cols-2 gap-3">
+                  <div className="bg-gray-50 rounded-xl p-3 dark:bg-gray-800/50">
+                    <div className="flex items-center gap-2 mb-1">
+                      <CheckCircle2 className="w-3 h-3 text-green-500" />
+                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Resolved</span>
+                    </div>
+                    <div className="text-lg font-bold text-gray-900 dark:text-white">{tech.kpis.resolved_count}</div>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3 dark:bg-gray-800/50">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Clock className="w-3 h-3 text-indigo-500" />
+                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Avg Time</span>
+                    </div>
+                    <div className="text-lg font-bold text-gray-900 dark:text-white">{tech.kpis.avg_resolution_time}h</div>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3 dark:bg-gray-800/50">
+                    <div className="flex items-center gap-2 mb-1">
+                      <ShieldCheck className="w-3 h-3 text-blue-500" />
+                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">SLA Rate</span>
+                    </div>
+                    <div className="text-lg font-bold text-gray-900 dark:text-white">{tech.kpis.sla_compliance}%</div>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3 dark:bg-gray-800/50">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Star className="w-3 h-3 text-amber-500" />
+                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">CSAT</span>
+                    </div>
+                    <div className="text-lg font-bold text-gray-900 dark:text-white">{tech.kpis.avg_rating || '-'}/5</div>
+                  </div>
+                </div>
+              )}
 
               <div className="mt-6 pt-6 border-t border-gray-50 dark:border-gray-800 flex items-center justify-between">
                 <div className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
