@@ -88,6 +88,26 @@ function calculateSlaStatus(targetTime: string | null, status: string): 'on_trac
   return 'on_track';
 }
 
+router.get("/debug-schema", async (req, res) => {
+  console.log("GET /api/debug-schema - Checking tickets table schema");
+  try {
+    const { data, error } = await supabase
+      .from("tickets")
+      .select("*")
+      .limit(1);
+    
+    if (error) {
+      console.error("Supabase error checking schema:", error);
+      return res.status(500).json({ error: error.message, code: error.code });
+    }
+    
+    const columns = data && data.length > 0 ? Object.keys(data[0]) : [];
+    return res.json({ columns, hasResolvedAt: columns.includes('resolved_at') });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/health", (req, res) => res.json({ status: "ok", environment: process.env.NETLIFY ? "netlify" : "local" }));
 
 router.get("/seed", async (req, res) => {
