@@ -1257,11 +1257,30 @@ router.patch("/tickets/:id/complete", async (req, res) => {
       return res.status(403).json({ error: "Unauthorized. Only the assigned technician or IT Lead can complete the ticket." });
     }
 
-    const { error: updateError } = await supabase.from("tickets").update({ 
-      status: 'completed', 
-      resolved_at: new Date().toISOString(),
-      updated_at: new Date().toISOString() 
-    }).eq("id", id);
+    // Safe update for ticket completion
+    // We try to update with resolved_at first, but if it fails with PGRST204 (column not found),
+    // we try again without it to ensure the ticket status still updates.
+    let updateError;
+    try {
+      const { error } = await supabase.from("tickets").update({ 
+        status: 'completed', 
+        resolved_at: new Date().toISOString(),
+        updated_at: new Date().toISOString() 
+      }).eq("id", id);
+      updateError = error;
+    } catch (err: any) {
+      updateError = err;
+    }
+
+    if (updateError && (updateError.code === 'PGRST204' || updateError.message?.includes('resolved_at'))) {
+      console.warn(`Supabase schema mismatch: 'resolved_at' column not found in schema cache. Retrying update without it.`);
+      const { error: retryError } = await supabase.from("tickets").update({ 
+        status: 'completed', 
+        updated_at: new Date().toISOString() 
+      }).eq("id", id);
+      updateError = retryError;
+    }
+
     if (updateError) return handleSupabaseError(res, updateError, "update_ticket_status_complete");
 
     const { error: activityError } = await supabase.from("activities").insert([{ ticket_id: id, user_id: technician_id, action: "completed", details: "Technician marked the problem as fixed." }]);
