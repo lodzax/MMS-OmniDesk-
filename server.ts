@@ -6,7 +6,8 @@ import { createServer } from "http";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import cors from "cors";
-import apiRouter from "./src/api-router";
+import apiRouter from "./src/api-router.js";
+import { wsManager } from "./src/ws-manager.js";
 
 process.on('uncaughtException', (err) => {
   console.error('CRITICAL: Uncaught Exception:', err);
@@ -41,7 +42,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
 // Store active WebSocket connections by user_id
-const userConnections = new Map<string, WebSocket>();
+// const userConnections = new Map<string, WebSocket>();
 
 async function sendEmailNotification(to: string, subject: string, html: string) {
   if (!resend) {
@@ -62,10 +63,7 @@ async function sendEmailNotification(to: string, subject: string, html: string) 
 }
 
 function sendNotification(userId: string, notification: any) {
-  const ws = userConnections.get(userId);
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "notification", data: notification }));
-  }
+  wsManager.sendToUser(userId, "notification", notification);
 }
 
 const app = express();
@@ -100,8 +98,7 @@ export async function startServer() {
         const data = JSON.parse(message.toString());
         if (data.type === "auth" && data.userId) {
           currentUserId = data.userId;
-          userConnections.set(currentUserId, ws);
-          console.log(`User connected: ${currentUserId}`);
+          wsManager.addUser(currentUserId, ws);
         }
       } catch (e) {
         console.error("WS message error:", e);
@@ -110,8 +107,7 @@ export async function startServer() {
 
     ws.on("close", () => {
       if (currentUserId) {
-        userConnections.delete(currentUserId);
-        console.log(`User disconnected: ${currentUserId}`);
+        wsManager.removeUser(currentUserId);
       }
     });
   });

@@ -15,7 +15,9 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   FileText,
-  Loader2
+  Loader2,
+  Filter,
+  X
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -24,9 +26,12 @@ import { GoogleGenAI, Type } from '@google/genai';
 
 interface DashboardProps {
   tickets: Ticket[];
-  onFilterStatus?: (status: TicketStatus | 'all') => void;
-  onFilterPriority?: (priority: TicketPriority | 'all') => void;
-  onFilterCategory?: (category: TicketCategory | 'all') => void;
+  statusFilter: TicketStatus | 'all';
+  priorityFilter: TicketPriority | 'all';
+  categoryFilter: TicketCategory | 'all';
+  onFilterStatus: (status: TicketStatus | 'all') => void;
+  onFilterPriority: (priority: TicketPriority | 'all') => void;
+  onFilterCategory: (category: TicketCategory | 'all') => void;
   onViewList?: () => void;
 }
 
@@ -34,6 +39,9 @@ const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
 
 export const Dashboard: React.FC<DashboardProps> = ({ 
   tickets, 
+  statusFilter,
+  priorityFilter,
+  categoryFilter,
   onFilterStatus, 
   onFilterPriority, 
   onFilterCategory,
@@ -41,15 +49,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
 }) => {
   const [isGenerating, setIsGenerating] = useState(false);
 
+  const filteredTickets = useMemo(() => {
+    return tickets.filter(t => {
+      const statusMatch = statusFilter === 'all' || t.status === statusFilter;
+      const priorityMatch = priorityFilter === 'all' || t.priority === priorityFilter;
+      const categoryMatch = categoryFilter === 'all' || t.category === categoryFilter;
+      return statusMatch && priorityMatch && categoryMatch;
+    });
+  }, [tickets, statusFilter, priorityFilter, categoryFilter]);
+
   const metrics = useMemo(() => {
-    const total = tickets.length;
-    const completed = tickets.filter(t => t.status === 'completed').length;
-    const acknowledged = tickets.filter(t => t.status === 'acknowledged').length;
-    const pending = tickets.filter(t => t.status === 'open' || t.status === 'assigned').length;
-    const escalated = tickets.filter(t => t.is_escalated).length;
+    const total = filteredTickets.length;
+    const completed = filteredTickets.filter(t => t.status === 'completed').length;
+    const acknowledged = filteredTickets.filter(t => t.status === 'acknowledged').length;
+    const pending = filteredTickets.filter(t => t.status === 'open' || t.status === 'assigned' || t.status === 'in_progress').length;
+    const escalated = filteredTickets.filter(t => t.is_escalated).length;
     
     return { total, completed, acknowledged, pending, escalated };
-  }, [tickets]);
+  }, [filteredTickets]);
 
   const categoryData = useMemo(() => {
     const counts: Record<string, number> = {
@@ -60,30 +77,33 @@ export const Dashboard: React.FC<DashboardProps> = ({
       desktop: 0,
       other: 0
     };
-    tickets.forEach(t => {
+    filteredTickets.forEach(t => {
       counts[t.category] = (counts[t.category] || 0) + 1;
     });
     return Object.entries(counts).map(([name, value]) => ({ 
       name: name.charAt(0).toUpperCase() + name.slice(1), 
       value 
     }));
-  }, [tickets]);
+  }, [filteredTickets]);
 
   const priorityData = useMemo(() => {
     const counts: Record<string, number> = { low: 0, medium: 0, high: 0, critical: 0 };
-    tickets.forEach(t => {
+    filteredTickets.forEach(t => {
       counts[t.priority] = (counts[t.priority] || 0) + 1;
     });
     return Object.entries(counts).map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value }));
-  }, [tickets]);
+  }, [filteredTickets]);
 
   const statusData = useMemo(() => {
-    const counts: Record<string, number> = { open: 0, assigned: 0, completed: 0, acknowledged: 0 };
-    tickets.forEach(t => {
+    const counts: Record<string, number> = { open: 0, assigned: 0, in_progress: 0, completed: 0, acknowledged: 0 };
+    filteredTickets.forEach(t => {
       counts[t.status] = (counts[t.status] || 0) + 1;
     });
-    return Object.entries(counts).map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value }));
-  }, [tickets]);
+    return Object.entries(counts).map(([name, value]) => ({ 
+      name: name.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '), 
+      value 
+    }));
+  }, [filteredTickets]);
 
   const timeData = useMemo(() => {
     // Group by date for the last 7 days
@@ -94,10 +114,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }).reverse();
 
     return last7Days.map(date => {
-      const count = tickets.filter(t => t.created_at.startsWith(date)).length;
+      const count = filteredTickets.filter(t => t.created_at.startsWith(date)).length;
       return { date: date.split('-').slice(1).join('/'), count };
     });
-  }, [tickets]);
+  }, [filteredTickets]);
 
   const generateReport = async () => {
     setIsGenerating(true);
@@ -356,6 +376,73 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </>
           )}
         </motion.button>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white p-4 rounded-3xl border border-gray-200 shadow-sm dark:bg-[#1C1C1E] dark:border-gray-800">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+            <Filter className="w-4 h-4" />
+            <span className="text-sm font-bold uppercase tracking-wider">Filters:</span>
+          </div>
+          
+          <select 
+            value={statusFilter}
+            onChange={(e) => onFilterStatus(e.target.value as any)}
+            className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+          >
+            <option value="all">All Statuses</option>
+            <option value="open">Open</option>
+            <option value="assigned">Assigned</option>
+            <option value="in_progress">In Progress</option>
+            <option value="completed">Completed</option>
+            <option value="acknowledged">Acknowledged</option>
+          </select>
+
+          <select 
+            value={priorityFilter}
+            onChange={(e) => onFilterPriority(e.target.value as any)}
+            className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+          >
+            <option value="all">All Priorities</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="critical">Critical</option>
+          </select>
+
+          <select 
+            value={categoryFilter}
+            onChange={(e) => onFilterCategory(e.target.value as any)}
+            className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+          >
+            <option value="all">All Categories</option>
+            <option value="laptop">Laptop</option>
+            <option value="desktop">Desktop</option>
+            <option value="connectivity">Connectivity</option>
+            <option value="printer">Printer</option>
+            <option value="software">Software</option>
+            <option value="other">Other</option>
+          </select>
+
+          {(statusFilter !== 'all' || priorityFilter !== 'all' || categoryFilter !== 'all') && (
+            <button 
+              onClick={() => {
+                onFilterStatus('all');
+                onFilterPriority('all');
+                onFilterCategory('all');
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-bold text-rose-600 hover:text-rose-700 bg-rose-50 rounded-xl transition-colors dark:bg-rose-900/20 dark:text-rose-400"
+            >
+              <X className="w-4 h-4" />
+              Clear Filters
+            </button>
+          )}
+
+          <div className="ml-auto text-xs font-bold text-gray-400 uppercase tracking-widest">
+            Showing {filteredTickets.length} of {tickets.length} tickets
+          </div>
+        </div>
       </div>
 
       {/* Metrics Cards */}

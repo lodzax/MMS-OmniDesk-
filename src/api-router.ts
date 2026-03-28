@@ -2,6 +2,7 @@ import express from "express";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import crypto from "crypto";
+import { wsManager } from "./ws-manager.js";
 
 const router = express.Router();
 
@@ -37,11 +38,15 @@ async function sendEmailNotification(to: string, subject: string, html: string) 
   }
 }
 
-// We need a way to send notifications, but WebSockets are not available in serverless.
-// We'll just log them for now, or the client can poll.
+// Helper for notifications
 function sendNotification(userId: string, notification: any) {
   console.log(`Notification for ${userId}: ${notification.message}`);
-  // In a real serverless app, you might use a service like Pusher or Ably here.
+  wsManager.sendToUser(userId, "notification", notification);
+}
+
+function broadcastNotification(notification: any, excludeUserId?: string) {
+  console.log(`Broadcasting notification: ${notification.message}`);
+  wsManager.broadcast("notification", notification, excludeUserId);
 }
 
 // Helper for Supabase errors
@@ -925,6 +930,17 @@ router.post("/tickets", async (req, res) => {
     }
     
     console.log(`Ticket ${id} created successfully`);
+    
+    // Notify all technicians and IT leads about the new ticket
+    broadcastNotification({
+      id: Math.random().toString(36).substr(2, 9),
+      user_id: "broadcast", // Special ID for broadcast
+      message: `New ticket created: ${title}`,
+      ticket_id: id,
+      is_read: 0,
+      created_at: new Date().toISOString()
+    }, created_by);
+
     res.json(ticket);
   } catch (err: any) {
     console.error("Unexpected error in POST /api/tickets:", err);
