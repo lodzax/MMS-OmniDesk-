@@ -7,7 +7,7 @@ export interface User {
   email?: string;
 }
 
-export type TicketCategory = 'laptop' | 'connectivity' | 'printer' | 'software' | 'desktop' | 'other';
+export type TicketCategory = 'laptop' | 'connectivity' | 'printer' | 'software' | 'desktop' | 'mobile' | 'other';
 export type TicketStatus = 'open' | 'assigned' | 'in_progress' | 'completed' | 'acknowledged';
 export type TicketPriority = 'low' | 'medium' | 'high' | 'critical';
 

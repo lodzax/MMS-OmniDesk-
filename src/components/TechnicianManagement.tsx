@@ -165,7 +165,7 @@ export const TechnicianManagement: React.FC<TechnicianManagementProps> = ({ user
           placeholder="Search technicians by name or specialty..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-11 pr-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm text-black focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+          className="w-full pl-11 pr-4 py-3 bg-white dark:bg-[#1C1C1E] border border-gray-200 dark:border-gray-800 rounded-2xl text-sm text-black dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
         />
       </div>
 
@@ -308,7 +308,7 @@ export const TechnicianManagement: React.FC<TechnicianManagementProps> = ({ user
                               email: selectedUser?.email || prev.email
                             }));
                           }}
-                          className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm text-black focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                          className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl text-sm text-black dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                         >
                           <option value="">-- Create New or Select --</option>
                           {availableUsers.map(u => (
@@ -327,7 +327,7 @@ export const TechnicianManagement: React.FC<TechnicianManagementProps> = ({ user
                               placeholder="Technician's Full Name"
                               value={formData.name}
                               onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm text-black focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                              className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl text-sm text-black dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                             />
                           </div>
                           <div className="space-y-1.5">
@@ -338,7 +338,7 @@ export const TechnicianManagement: React.FC<TechnicianManagementProps> = ({ user
                               placeholder="tech@company.com"
                               value={formData.email}
                               onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm text-black focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                              className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl text-sm text-black dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                             />
                           </div>
                         </>
@@ -353,7 +353,7 @@ export const TechnicianManagement: React.FC<TechnicianManagementProps> = ({ user
                       placeholder="e.g. Network Security, Hardware Repair"
                       value={formData.specialty}
                       onChange={(e) => setFormData(prev => ({ ...prev, specialty: e.target.value }))}
-                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm text-black focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                      className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl text-sm text-black dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                     />
                   </div>
 
@@ -364,7 +364,7 @@ export const TechnicianManagement: React.FC<TechnicianManagementProps> = ({ user
                       placeholder="+1 (555) 000-0000"
                       value={formData.phone}
                       onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm text-black focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                      className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl text-sm text-black dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                     />
                   </div>
 

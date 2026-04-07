@@ -47,7 +47,9 @@ import {
   ExternalLink,
   Book,
   Lightbulb,
-  ArrowRight
+  ArrowRight,
+  Smartphone,
+  Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDistanceToNow, format, addHours } from 'date-fns';
@@ -59,6 +61,7 @@ import { SLA_HOURS, SLA_LABELS } from './constants';
 const CATEGORIES: { id: TicketCategory; label: string; icon: any }[] = [
   { id: 'laptop', label: 'Laptop', icon: Laptop },
   { id: 'desktop', label: 'Desktop', icon: Monitor },
+  { id: 'mobile', label: 'Mobile Device', icon: Smartphone },
   { id: 'connectivity', label: 'Connectivity', icon: Wifi },
   { id: 'printer', label: 'Printer', icon: Printer },
   { id: 'software', label: 'Software', icon: Code2 },
@@ -82,10 +85,12 @@ export default function App() {
   const [categoryFilter, setCategoryFilter] = useState<TicketCategory | 'all'>('all');
   const [tagFilter, setTagFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<'created_at' | 'updated_at' | 'sla_status'>('created_at');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [statusFilter, priorityFilter, categoryFilter, tagFilter, searchTerm]);
+  }, [statusFilter, priorityFilter, categoryFilter, tagFilter, searchTerm, sortBy, sortOrder]);
 
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -115,15 +120,30 @@ export default function App() {
   const [totalTickets, setTotalTickets] = useState(0);
   const [ticketsPerPage] = useState(10);
 
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('theme');
+      if (saved === 'light' || saved === 'dark') return saved;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    return 'light';
+  });
+
   useEffect(() => {
-    // Explicitly remove dark mode classes and clear theme from localStorage
     const root = window.document.documentElement;
-    const body = window.document.body;
-    root.classList.remove('dark');
-    body.classList.remove('dark');
-    root.style.colorScheme = 'light';
-    localStorage.removeItem('theme');
-  }, []);
+    if (theme === 'dark') {
+      root.classList.add('dark');
+      root.style.colorScheme = 'dark';
+    } else {
+      root.classList.remove('dark');
+      root.style.colorScheme = 'light';
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  };
 
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -328,7 +348,9 @@ export default function App() {
         priority: priorityFilter,
         category: categoryFilter,
         tag: tagFilter,
-        search: searchTerm
+        search: searchTerm,
+        sortBy,
+        sortOrder
       });
 
       const response = await fetchWithRetry(`/api/tickets?${params.toString()}`);
@@ -350,7 +372,7 @@ export default function App() {
     if (currentUser) {
       fetchTickets();
     }
-  }, [currentUser, currentPage, statusFilter, priorityFilter, categoryFilter, tagFilter, searchTerm]);
+  }, [currentUser, currentPage, statusFilter, priorityFilter, categoryFilter, tagFilter, searchTerm, sortBy, sortOrder]);
 
   const fetchAllTickets = async () => {
     if (!currentUser) return;
@@ -1207,7 +1229,7 @@ export default function App() {
                 <input 
                   type="text"
                   placeholder="Search tickets..."
-                  className="flex-1 text-sm bg-white border-none focus:ring-0 outline-none font-medium text-black"
+                  className="flex-1 text-sm bg-white dark:bg-transparent border-none focus:ring-0 outline-none font-medium text-black dark:text-white"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -1216,7 +1238,7 @@ export default function App() {
               <div className="bg-white p-3 rounded-2xl border border-gray-200 flex items-center gap-3 dark:bg-[#1C1C1E] dark:border-gray-800">
                 <Filter className="w-4 h-4 text-gray-400" />
                 <select 
-                  className="flex-1 text-sm bg-white border-none focus:ring-0 cursor-pointer font-medium text-black"
+                  className="flex-1 text-sm bg-white dark:bg-transparent border-none focus:ring-0 cursor-pointer font-medium text-black dark:text-white"
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value as any)}
                 >
@@ -1232,7 +1254,7 @@ export default function App() {
               <div className="bg-white p-3 rounded-2xl border border-gray-200 flex items-center gap-3 dark:bg-[#1C1C1E] dark:border-gray-800">
                 <AlertCircle className="w-4 h-4 text-gray-400" />
                 <select 
-                  className="flex-1 text-sm bg-white border-none focus:ring-0 cursor-pointer font-medium text-black"
+                  className="flex-1 text-sm bg-white dark:bg-transparent border-none focus:ring-0 cursor-pointer font-medium text-black dark:text-white"
                   value={priorityFilter}
                   onChange={(e) => setPriorityFilter(e.target.value as any)}
                 >
@@ -1247,7 +1269,7 @@ export default function App() {
               <div className="bg-white p-3 rounded-2xl border border-gray-200 flex items-center gap-3 dark:bg-[#1C1C1E] dark:border-gray-800">
                 <Laptop className="w-4 h-4 text-gray-400" />
                 <select 
-                  className="flex-1 text-sm bg-white border-none focus:ring-0 cursor-pointer font-medium text-black"
+                  className="flex-1 text-sm bg-white dark:bg-transparent border-none focus:ring-0 cursor-pointer font-medium text-black dark:text-white"
                   value={categoryFilter}
                   onChange={(e) => setCategoryFilter(e.target.value as any)}
                 >
@@ -1272,6 +1294,26 @@ export default function App() {
                     <X className="w-3 h-3" />
                   </button>
                 )}
+              </div>
+
+              <div className="bg-white p-3 rounded-2xl border border-gray-200 flex items-center gap-3 dark:bg-[#1C1C1E] dark:border-gray-800">
+                <History className="w-4 h-4 text-gray-400" />
+                <select 
+                  className="flex-1 text-sm bg-white dark:bg-transparent border-none focus:ring-0 cursor-pointer font-medium text-black dark:text-white"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                >
+                  <option value="created_at">Sort by Created Date</option>
+                  <option value="updated_at">Sort by Updated Date</option>
+                  <option value="sla_status">Sort by SLA Priority</option>
+                </select>
+                <button 
+                  onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                  className="p-1 hover:bg-gray-100 rounded-md dark:hover:bg-gray-800 transition-colors"
+                  title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
+                >
+                  {sortOrder === 'asc' ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
+                </button>
               </div>
             </div>
 
@@ -1317,15 +1359,20 @@ export default function App() {
                     className={`p-4 rounded-2xl border transition-all cursor-pointer group relative overflow-hidden ${
                       selectedTicket?.id === ticket.id 
                         ? 'bg-indigo-50/50 border-indigo-600 shadow-md ring-1 ring-indigo-600 dark:bg-indigo-900/10 dark:border-indigo-500 dark:ring-indigo-500' 
-                        : ticket.is_escalated
-                          ? 'bg-red-50/30 border-red-200 hover:border-red-300 dark:bg-red-900/5 dark:border-red-900/30'
-                          : 'bg-white border-gray-200 hover:border-indigo-300 hover:shadow-sm dark:bg-[#1C1C1E] dark:border-gray-800 dark:hover:border-indigo-700'
+                        : ticket.is_blocked
+                          ? 'bg-amber-50/20 border-amber-200 hover:border-amber-300 dark:bg-amber-900/5 dark:border-amber-900/20'
+                          : ticket.is_escalated
+                            ? 'bg-red-50/30 border-red-200 hover:border-red-300 dark:bg-red-900/5 dark:border-red-900/30'
+                            : 'bg-white border-gray-200 hover:border-indigo-300 hover:shadow-sm dark:bg-[#1C1C1E] dark:border-gray-800 dark:hover:border-indigo-700'
                     }`}
                   >
                     {selectedTicket?.id === ticket.id && (
-                      <div className={`absolute left-0 top-0 bottom-0 w-1 ${ticket.is_escalated ? 'bg-red-600' : 'bg-indigo-600 dark:bg-indigo-500'}`} />
+                      <div className={`absolute left-0 top-0 bottom-0 w-1 ${ticket.is_blocked ? 'bg-amber-500' : ticket.is_escalated ? 'bg-red-600' : 'bg-indigo-600 dark:bg-indigo-500'}`} />
                     )}
-                    {ticket.is_escalated && selectedTicket?.id !== ticket.id && (
+                    {ticket.is_blocked && selectedTicket?.id !== ticket.id && (
+                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-400/50" />
+                    )}
+                    {ticket.is_escalated && !ticket.is_blocked && selectedTicket?.id !== ticket.id && (
                       <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-400/50" />
                     )}
                     <div className="flex justify-between items-start mb-2">
@@ -1360,7 +1407,7 @@ export default function App() {
                           )}
                           {ticket.is_blocked && (
                             <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border border-amber-600 bg-amber-600 text-white flex items-center gap-1">
-                              <ShieldCheck className="w-2.5 h-2.5" />
+                              <Lock className="w-2.5 h-2.5" />
                               Blocked
                             </span>
                           )}
@@ -1481,10 +1528,10 @@ export default function App() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
-                  className="bg-white rounded-3xl border border-gray-200 p-8 shadow-sm"
+                  className="bg-white rounded-3xl border border-gray-200 p-8 shadow-sm dark:bg-[#1C1C1E] dark:border-gray-800"
                 >
                   <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-2xl font-bold tracking-tight">Create New Ticket</h2>
+                    <h2 className="text-2xl font-bold tracking-tight dark:text-white">Create New Ticket</h2>
                     <button onClick={() => setIsCreating(false)} className="text-gray-400 hover:text-gray-600">
                       <LogOut className="w-5 h-5" />
                     </button>
@@ -1502,8 +1549,8 @@ export default function App() {
                               onClick={() => setNewTicket({ ...newTicket, category: cat.id })}
                               className={`flex flex-col items-center justify-center p-4 rounded-2xl border transition-all ${
                                 newTicket.category === cat.id 
-                                  ? 'bg-indigo-50 border-indigo-600 text-indigo-600' 
-                                  : 'bg-white border-gray-200 text-gray-500 hover:border-indigo-200'
+                                  ? 'bg-indigo-50 border-indigo-600 text-indigo-600 dark:bg-indigo-900/20 dark:border-indigo-500 dark:text-indigo-400' 
+                                  : 'bg-white border-gray-200 text-gray-500 hover:border-indigo-200 dark:bg-[#1C1C1E] dark:border-gray-800 dark:text-gray-500 dark:hover:border-indigo-900/50'
                               }`}
                             >
                               <cat.icon className={`w-6 h-6 mb-2 ${newTicket.category === cat.id ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500'}`} />
@@ -1517,7 +1564,7 @@ export default function App() {
                         <div>
                           <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2 dark:text-gray-400">Requested For</label>
                           <select 
-                            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all bg-white text-black"
+                            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all bg-white text-black dark:bg-gray-800 dark:border-gray-700 dark:text-white"
                             value={newTicket.requested_for}
                             onChange={e => setNewTicket({ ...newTicket, requested_for: e.target.value })}
                           >
@@ -1567,7 +1614,7 @@ export default function App() {
                         value={newTicket.title}
                         onChange={e => setNewTicket({ ...newTicket, title: e.target.value })}
                         placeholder="e.g., Laptop won't turn on"
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white text-black"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white text-black dark:bg-gray-800 dark:border-gray-700 dark:text-white"
                       />
                     </div>
 
@@ -1579,7 +1626,7 @@ export default function App() {
                         value={newTicket.description}
                         onChange={e => setNewTicket({ ...newTicket, description: e.target.value })}
                         placeholder="Please provide more details about the issue..."
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all resize-none bg-white text-black"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all resize-none bg-white text-black dark:bg-gray-800 dark:border-gray-700 dark:text-white"
                       />
                     </div>
 
@@ -1618,7 +1665,7 @@ export default function App() {
                             }
                           }}
                           placeholder="Add a tag and press Enter"
-                          className="flex-1 px-4 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white text-black text-sm"
+                          className="flex-1 px-4 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white text-black text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white"
                         />
                         <button 
                           type="button"
@@ -1686,7 +1733,7 @@ export default function App() {
                           <div>
                             <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2 dark:text-gray-400">Category</label>
                             <select 
-                              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-black"
+                              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-black dark:bg-gray-800 dark:border-gray-700 dark:text-white"
                               value={editForm.category}
                               onChange={e => setEditForm({ ...editForm, category: e.target.value as TicketCategory })}
                             >
@@ -1698,7 +1745,7 @@ export default function App() {
                           <div>
                             <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2 dark:text-gray-400">Requested For</label>
                             <select 
-                              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-black"
+                              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-black dark:bg-gray-800 dark:border-gray-700 dark:text-white"
                               value={editForm.requested_for}
                               onChange={e => setEditForm({ ...editForm, requested_for: e.target.value })}
                             >
@@ -1710,7 +1757,7 @@ export default function App() {
                           <div>
                             <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2 dark:text-gray-400">Priority</label>
                             <select 
-                              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-black"
+                              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-black dark:bg-gray-800 dark:border-gray-700 dark:text-white"
                               value={editForm.priority}
                               onChange={e => setEditForm({ ...editForm, priority: e.target.value as TicketPriority })}
                             >
@@ -1754,7 +1801,7 @@ export default function App() {
                                 }
                               }}
                               placeholder="Add a tag and press Enter"
-                              className="flex-1 px-4 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white text-black text-sm"
+                              className="flex-1 px-4 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white text-black text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white"
                             />
                             <button 
                               type="button"
@@ -1778,7 +1825,7 @@ export default function App() {
                             type="text" 
                             value={editForm.title}
                             onChange={e => setEditForm({ ...editForm, title: e.target.value })}
-                            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all bg-white text-black"
+                            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all bg-white text-black dark:bg-gray-800 dark:border-gray-700 dark:text-white"
                           />
                         </div>
 
@@ -1789,7 +1836,7 @@ export default function App() {
                             rows={4}
                             value={editForm.description}
                             onChange={e => setEditForm({ ...editForm, description: e.target.value })}
-                            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none bg-white text-black"
+                            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none bg-white text-black dark:bg-gray-800 dark:border-gray-700 dark:text-white"
                           />
                         </div>
                       </form>
@@ -1914,7 +1961,7 @@ export default function App() {
                           </label>
                           <div className="flex gap-2">
                             <select 
-                              className="text-sm bg-white border border-indigo-200 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-indigo-500 text-black"
+                              className="text-sm bg-white border border-indigo-200 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-indigo-500 text-black dark:bg-gray-800 dark:border-indigo-900/50 dark:text-white"
                               onChange={(e) => handleAssign(selectedTicket.id, e.target.value)}
                               value={selectedTicket.assigned_to || ""}
                             >
@@ -2113,7 +2160,7 @@ export default function App() {
                           <select 
                             value={selectedTicket.status}
                             onChange={(e) => handleStatusUpdate(selectedTicket.id, e.target.value as TicketStatus)}
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all bg-white text-black"
+                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all bg-white text-black dark:bg-gray-800 dark:border-gray-700 dark:text-white"
                           >
                             <option value="open">Open</option>
                             <option value="assigned">Assigned</option>
@@ -2128,7 +2175,7 @@ export default function App() {
                             value={workLog}
                             onChange={e => setWorkLog(e.target.value)}
                             placeholder="Describe what you've done to fix the issue..."
-                            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none bg-white text-black"
+                            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none bg-white text-black dark:bg-gray-800 dark:border-gray-700 dark:text-white"
                             rows={3}
                           />
                         </div>
@@ -2291,7 +2338,7 @@ export default function App() {
                             value={comment}
                             onChange={e => setComment(e.target.value)}
                             placeholder="Type your message here..."
-                            className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all bg-white text-black"
+                            className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all bg-white text-black dark:bg-gray-800 dark:border-gray-700 dark:text-white"
                           />
                           <button 
                             type="submit"
@@ -2373,6 +2420,8 @@ export default function App() {
     <SettingsModal 
       isOpen={isSettingsOpen}
       onClose={() => setIsSettingsOpen(false)}
+      theme={theme}
+      onToggleTheme={toggleTheme}
     />
 
     <Modal
@@ -2391,7 +2440,7 @@ export default function App() {
           value={escalationReason}
           onChange={(e) => setEscalationReason(e.target.value)}
           placeholder="e.g., SLA breached, critical business impact, unresolved for 48h..."
-          className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none bg-white text-black text-sm"
+          className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none bg-white dark:bg-gray-800 text-black dark:text-white text-sm"
           rows={3}
         />
       </div>

@@ -2,7 +2,7 @@ import express from "express";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import crypto from "crypto";
-import { wsManager } from "./ws-manager.js";
+import { wsManager } from "./ws-manager.ts";
 
 const router = express.Router();
 
@@ -169,6 +169,13 @@ router.get("/seed", async (req, res) => {
         content: "Avoid keeping your laptop plugged in 24/7. Let it discharge to 20% at least once a week to maintain battery health.", 
         category: "laptop", 
         tags: ["battery", "laptop", "maintenance"] 
+      },
+      { 
+        id: "kb-006", 
+        title: "Mobile Device Email Setup", 
+        content: "To set up work email on your mobile device, download the Outlook app from the App Store or Play Store. Sign in with your work email and password.", 
+        category: "mobile", 
+        tags: ["mobile", "email", "setup", "phone"] 
       }
     ];
     await supabase.from("knowledge_base").upsert(initialKB);
@@ -215,6 +222,13 @@ const MOCK_KB = [
     content: "Avoid keeping your laptop plugged in 24/7. Let it discharge to 20% at least once a week to maintain battery health.", 
     category: "laptop", 
     tags: ["battery", "laptop", "maintenance"] 
+  },
+  { 
+    id: "kb-006", 
+    title: "Mobile Device Email Setup", 
+    content: "To set up work email on your mobile device, download the Outlook app from the App Store or Play Store. Sign in with your work email and password.", 
+    category: "mobile", 
+    tags: ["mobile", "email", "setup", "phone"] 
   }
 ];
 
@@ -814,7 +828,9 @@ router.get("/tickets", async (req, res) => {
     category, 
     tag,
     search,
-    user_id 
+    user_id,
+    sortBy = 'created_at',
+    sortOrder = 'desc'
   } = req.query;
   
   const pageNum = Number(page);
@@ -822,7 +838,7 @@ router.get("/tickets", async (req, res) => {
   const from = (pageNum - 1) * limitNum;
   const to = from + limitNum - 1;
 
-  console.log(`GET /api/tickets - Fetching tickets (page: ${pageNum}, limit: ${limitNum}, user: ${user_id})`);
+  console.log(`GET /api/tickets - Fetching tickets (page: ${pageNum}, limit: ${limitNum}, user: ${user_id}, sortBy: ${sortBy}, sortOrder: ${sortOrder})`);
   
   try {
     let query = supabase
@@ -847,8 +863,19 @@ router.get("/tickets", async (req, res) => {
       query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
     }
 
+    // Sorting
+    let finalSortBy = sortBy as string;
+    let finalSortOrder = sortOrder === 'asc';
+
+    if (sortBy === 'sla_status') {
+      // Use sla_target_time as a proxy for SLA status sorting
+      finalSortBy = 'sla_target_time';
+      // For SLA status, ASC means most urgent first (breached < approaching < on track)
+      finalSortOrder = sortOrder === 'asc';
+    }
+
     const { data: tickets, error, count } = await query
-      .order('created_at', { ascending: false })
+      .order(finalSortBy, { ascending: finalSortOrder, nullsFirst: false })
       .range(from, to);
     
     if (error) {

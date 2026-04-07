@@ -52,7 +52,7 @@ export const Modal: React.FC<ModalProps> = ({
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200"
+            className="relative w-full max-w-md bg-white dark:bg-gray-900 rounded-3xl shadow-2xl overflow-hidden border border-gray-200 dark:border-gray-800 transition-colors duration-300"
           >
             <div className="p-6">
               <div className="flex items-start justify-between mb-4">
@@ -67,8 +67,8 @@ export const Modal: React.FC<ModalProps> = ({
                 </button>
               </div>
               
-              <h3 className="text-xl font-bold text-gray-900 mb-2">{title}</h3>
-              <p className="text-gray-500 text-sm leading-relaxed mb-4 whitespace-pre-wrap">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">{title}</h3>
+              <p className="text-gray-500 dark:text-gray-400 text-sm leading-relaxed mb-4 whitespace-pre-wrap">
                 {message}
               </p>
 
@@ -81,7 +81,7 @@ export const Modal: React.FC<ModalProps> = ({
               <div className="flex gap-3">
                 <button
                   onClick={onClose}
-                  className="flex-1 px-4 py-3 rounded-2xl border border-gray-200 text-sm font-bold text-gray-600 hover:bg-gray-50 transition-all"
+                  className="flex-1 px-4 py-3 rounded-2xl border border-gray-200 dark:border-gray-700 text-sm font-bold text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all"
                 >
                   {cancelText}
                 </button>

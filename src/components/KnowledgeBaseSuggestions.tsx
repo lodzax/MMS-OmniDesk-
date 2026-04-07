@@ -116,7 +116,7 @@ export const KnowledgeBaseSuggestions: React.FC<KnowledgeBaseSuggestionsProps> =
                     <div className="flex justify-between items-center gap-3">
                       <div className="flex-1 min-w-0">
                         <h5 className="text-sm font-bold text-gray-900 dark:text-white mb-0.5 group-hover:text-indigo-600 transition-colors truncate">{article.title}</h5>
-                        <p className="text-[10px] text-gray-500 line-clamp-1">{article.content}</p>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-1">{article.content}</p>
                       </div>
                       <ArrowRight className="w-3.5 h-3.5 text-gray-300 group-hover:text-indigo-400 transition-all transform group-hover:translate-x-1" />
                     </div>

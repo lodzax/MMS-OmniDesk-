@@ -6,8 +6,8 @@ import { createServer } from "http";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import cors from "cors";
-import apiRouter from "./src/api-router.js";
-import { wsManager } from "./src/ws-manager.js";
+import apiRouter from "./src/api-router.ts";
+import { wsManager } from "./src/ws-manager.ts";
 
 process.on('uncaughtException', (err) => {
   console.error('CRITICAL: Uncaught Exception:', err);

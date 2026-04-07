@@ -114,17 +114,17 @@ export const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
                       required 
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="w-full pl-11 pr-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm text-black focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                      className="w-full pl-11 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl text-sm text-black dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                       placeholder="John Doe"
                     />
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Role</label>
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1 dark:text-gray-400">Role</label>
                   <select 
                     value={role}
                     onChange={(e) => setRole(e.target.value as any)}
-                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm text-black focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl text-sm text-black dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                   >
                     <option value="end_user">End User</option>
                     <option value="technician">Technician</option>
@@ -136,7 +136,7 @@ export const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
             )}
 
             <div className="space-y-1">
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Email Address</label>
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1 dark:text-gray-400">Email Address</label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input 
@@ -144,14 +144,14 @@ export const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
                   required 
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm text-black focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                  className="w-full pl-11 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl text-sm text-black dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                   placeholder="name@company.com"
                 />
               </div>
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Password</label>
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1 dark:text-gray-400">Password</label>
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input 
@@ -159,14 +159,14 @@ export const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
                   required 
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm text-black focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                  className="w-full pl-11 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl text-sm text-black dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                   placeholder="••••••••"
                 />
               </div>
             </div>
 
             {error && (
-              <div className={`p-3 rounded-xl text-xs font-medium ${error.includes('successful') ? 'bg-green-50 text-green-600 border border-green-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
+              <div className={`p-3 rounded-xl text-xs font-medium ${error.includes('successful') ? 'bg-green-50 text-green-600 border border-green-100 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' : 'bg-rose-50 text-rose-600 border border-rose-100 dark:bg-rose-900/20 dark:text-rose-400 dark:border-rose-800'}`}>
                 {error}
               </div>
             )}
