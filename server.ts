@@ -79,6 +79,16 @@ app.use((req, res, next) => {
 // Mount the API router
 app.use("/api", apiRouter);
 
+// Catch-all for undefined API routes to return JSON instead of HTML
+app.use("/api", (req, res) => {
+  console.warn(`[API] 404 - Route not found: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ 
+    error: "API route not found", 
+    method: req.method,
+    url: req.originalUrl 
+  });
+});
+
 // Basic health check
 app.get("/api/ping", (req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
 

@@ -240,6 +240,11 @@ export default function App() {
       console.log(`Fetching profile for user: ${userId}`);
       const response = await fetchWithRetry(`/api/users/${userId}`);
       
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('text/html')) {
+        throw new Error('Received HTML response from API. This usually means the API route was not found or the server is misconfigured.');
+      }
+
       if (!response.ok) {
         let errorData;
         try {
