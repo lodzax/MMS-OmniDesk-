@@ -17,7 +17,8 @@ import {
   FileText,
   Loader2,
   Filter,
-  X
+  X,
+  Calendar
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -48,15 +49,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onViewList
 }) => {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
 
   const filteredTickets = useMemo(() => {
     return tickets.filter(t => {
       const statusMatch = statusFilter === 'all' || t.status === statusFilter;
       const priorityMatch = priorityFilter === 'all' || t.priority === priorityFilter;
       const categoryMatch = categoryFilter === 'all' || t.category === categoryFilter;
-      return statusMatch && priorityMatch && categoryMatch;
+      
+      const ticketDate = new Date(t.created_at);
+      const startMatch = !startDate || ticketDate >= new Date(startDate);
+      const endMatch = !endDate || ticketDate <= new Date(endDate + 'T23:59:59');
+      
+      return statusMatch && priorityMatch && categoryMatch && startMatch && endMatch;
     });
-  }, [tickets, statusFilter, priorityFilter, categoryFilter]);
+  }, [tickets, statusFilter, priorityFilter, categoryFilter, startDate, endDate]);
 
   const metrics = useMemo(() => {
     const total = filteredTickets.length;
@@ -106,18 +114,38 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }, [filteredTickets]);
 
   const timeData = useMemo(() => {
-    // Group by date for the last 7 days
-    const last7Days = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      return d.toISOString().split('T')[0];
-    }).reverse();
+    // Determine the range of dates to show
+    let dates: string[] = [];
+    
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const diffTime = Math.abs(end.getTime() - start.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      // Limit to 31 days for daily view, otherwise group by month? 
+      // For now, let's just show the days in the range, capped at 60 days to avoid UI clutter
+      const displayDays = Math.min(diffDays + 1, 60);
+      
+      dates = Array.from({ length: displayDays }, (_, i) => {
+        const d = new Date(start);
+        d.setDate(d.getDate() + i);
+        return d.toISOString().split('T')[0];
+      });
+    } else {
+      // Default to last 14 days if no range is selected
+      dates = Array.from({ length: 14 }, (_, i) => {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        return d.toISOString().split('T')[0];
+      }).reverse();
+    }
 
-    return last7Days.map(date => {
+    return dates.map(date => {
       const count = filteredTickets.filter(t => t.created_at.startsWith(date)).length;
       return { date: date.split('-').slice(1).join('/'), count };
     });
-  }, [filteredTickets]);
+  }, [filteredTickets, startDate, endDate]);
 
   const generateReport = async () => {
     setIsGenerating(true);
@@ -133,6 +161,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
       doc.setFontSize(10);
       doc.setTextColor(100, 116, 139); // Slate-500
       doc.text(`Generated on: ${timestamp}`, 14, 30);
+      
+      if (startDate || endDate) {
+        const period = `${startDate || 'Beginning'} to ${endDate || 'Present'}`;
+        doc.text(`Period: ${period}`, 14, 35);
+      }
 
       // Summary Section
       doc.setFontSize(16);
@@ -175,9 +208,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
         headStyles: { fillColor: [245, 158, 11] }, // Amber-500
       });
 
-      // Monthly Distribution (Last 6 months)
+      // Monthly Distribution (Last 6 months within range)
       const monthlyData: Record<string, number> = {};
-      tickets.forEach(t => {
+      filteredTickets.forEach(t => {
         const date = new Date(t.created_at);
         const monthYear = date.toLocaleString('default', { month: 'long', year: 'numeric' });
         monthlyData[monthYear] = (monthlyData[monthYear] || 0) + 1;
@@ -200,7 +233,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
       
       doc.setFontSize(10);
       doc.setTextColor(100, 116, 139);
-      doc.text('Advanced analysis of ticket patterns and resolution workflows.', 14, 28);
+      const periodText = startDate || endDate ? `Analysis for period: ${startDate || 'Beginning'} to ${endDate || 'Present'}` : 'Advanced analysis of ticket patterns and resolution workflows.';
+      doc.text(periodText, 14, 28);
 
       const apiKey = process.env.GEMINI_API_KEY;
       
@@ -217,26 +251,35 @@ export const Dashboard: React.FC<DashboardProps> = ({
       
       // Fetch recent activities for analysis
       const activitiesResponse = await fetch('/api/activities?limit=100');
-      const recentActivities = await activitiesResponse.json();
+      const allRecentActivities = await activitiesResponse.json();
       
-      const activitySummary = recentActivities.map((a: any) => 
+      // Filter activities by date range
+      const filteredActivities = allRecentActivities.filter((a: any) => {
+        const activityDate = new Date(a.created_at);
+        const startMatch = !startDate || activityDate >= new Date(startDate);
+        const endMatch = !endDate || activityDate <= new Date(endDate + 'T23:59:59');
+        return startMatch && endMatch;
+      });
+      
+      const activitySummary = filteredActivities.map((a: any) => 
         `- [${a.ticket_title || 'Unknown Ticket'}] ${a.user_name} (${a.user_role}): ${a.action} - ${a.details}`
       ).join('\n');
 
-      const ticketSummary = tickets.map(t => `- [${t.category}] ${t.title}: ${t.description.substring(0, 50)}...`).join('\n');
+      const ticketSummary = filteredTickets.map(t => `- [${t.category}] ${t.title}: ${t.description.substring(0, 50)}...`).join('\n');
       
       const prompt = `
-        As an IT Support Analyst, analyze the following ticket data and activity logs to provide 4 high-impact insights.
+        As an IT Support Analyst, analyze the following ticket data and activity logs for the period ${startDate || 'Beginning'} to ${endDate || 'Present'}.
+        Provide 4 high-impact insights based ONLY on the data provided for this timeframe.
         
-        Data Summary:
+        Data Summary for this Period:
         Total Tickets: ${metrics.total}
         Categories: ${JSON.stringify(categoryData)}
         Statuses: ${JSON.stringify(statusData)}
         
-        Recent Tickets:
+        Tickets in this Period:
         ${ticketSummary.substring(0, 1500)}
         
-        Recent Activity Logs:
+        Activity Logs in this Period:
         ${activitySummary.substring(0, 1500)}
       `;
 
@@ -310,16 +353,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
       });
 
       // Activity Summary Table
-      if (recentActivities.length > 0) {
+      if (filteredActivities.length > 0) {
         doc.addPage();
         doc.setFontSize(16);
         doc.setTextColor(30, 41, 59);
-        doc.text('Recent Resolution Activities', 14, 22);
+        doc.text('Resolution Activities in Period', 14, 22);
         
         autoTable(doc, {
           startY: 30,
           head: [['Ticket', 'User', 'Action', 'Details', 'Date']],
-          body: recentActivities.slice(0, 20).map((a: any) => [
+          body: filteredActivities.slice(0, 20).map((a: any) => [
             a.ticket_title || 'N/A',
             a.user_name || 'N/A',
             a.action,
@@ -425,12 +468,33 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <option value="other">Other</option>
           </select>
 
-          {(statusFilter !== 'all' || priorityFilter !== 'all' || categoryFilter !== 'all') && (
+          <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-100 dark:bg-gray-800 dark:border-gray-700">
+            <Calendar className="w-4 h-4 text-gray-400" />
+            <input 
+              type="date" 
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="bg-transparent border-none text-xs font-medium focus:ring-0 outline-none dark:text-white"
+              title="Start Date"
+            />
+            <span className="text-gray-300 dark:text-gray-600">|</span>
+            <input 
+              type="date" 
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="bg-transparent border-none text-xs font-medium focus:ring-0 outline-none dark:text-white"
+              title="End Date"
+            />
+          </div>
+
+          {(statusFilter !== 'all' || priorityFilter !== 'all' || categoryFilter !== 'all' || startDate || endDate) && (
             <button 
               onClick={() => {
                 onFilterStatus('all');
                 onFilterPriority('all');
                 onFilterCategory('all');
+                setStartDate('');
+                setEndDate('');
               }}
               className="flex items-center gap-1.5 px-3 py-2 text-sm font-bold text-rose-600 hover:text-rose-700 bg-rose-50 rounded-xl transition-colors dark:bg-rose-900/20 dark:text-rose-400"
             >
