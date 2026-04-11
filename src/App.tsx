@@ -952,7 +952,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7] text-[#1D1D1F] font-sans transition-colors duration-300">
+    <div className="min-h-screen bg-[#F5F5F7] text-[#1D1D1F] font-sans transition-colors duration-300 dark:bg-gray-950 dark:text-gray-100">
       <Toaster position="top-right" richColors />
       {/* Bulk Action Bar */}
       <AnimatePresence>
@@ -1010,13 +1010,13 @@ export default function App() {
       </AnimatePresence>
 
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-30 dark:bg-[#1C1C1E] dark:border-gray-800">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="bg-indigo-600 p-1.5 rounded-lg">
               <TicketIcon className="w-5 h-5 text-white" />
             </div>
-            <h1 className="text-xl font-semibold tracking-tight">OmniDesk</h1>
+            <h1 className="text-xl font-semibold tracking-tight dark:text-white">OmniDesk</h1>
           </div>
 
           <div className="flex items-center gap-4">
@@ -1096,11 +1096,11 @@ export default function App() {
                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute right-0 mt-2 w-80 bg-white rounded-2xl border border-gray-200 shadow-xl z-50 overflow-hidden"
+                    className="absolute right-0 mt-2 w-80 bg-white rounded-2xl border border-gray-200 shadow-xl z-50 overflow-hidden dark:bg-[#1C1C1E] dark:border-gray-800"
                   >
-                    <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-                      <h3 className="font-bold text-sm">Notifications</h3>
-                      <button onClick={() => setShowNotifications(false)} className="text-gray-400 hover:text-gray-600">
+                    <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/50">
+                      <h3 className="font-bold text-sm dark:text-white">Notifications</h3>
+                      <button onClick={() => setShowNotifications(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
                         <X className="w-4 h-4" />
                       </button>
                     </div>
@@ -1124,14 +1124,14 @@ export default function App() {
                               }
                               setShowNotifications(false);
                             }}
-                            className={`p-4 border-b border-gray-50 last:border-0 cursor-pointer hover:bg-gray-50 transition-colors ${!n.is_read ? 'bg-indigo-50/30' : ''}`}
+                            className={`p-4 border-b border-gray-50 last:border-0 cursor-pointer hover:bg-gray-50 transition-colors dark:border-gray-800 dark:hover:bg-gray-800/50 ${!n.is_read ? 'bg-indigo-50/30 dark:bg-indigo-900/20' : ''}`}
                           >
                             <div className="flex gap-3">
                               <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${!n.is_read ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-400'}`}>
                                 <TicketIcon className="w-4 h-4" />
                               </div>
                               <div className="flex-1">
-                                <p className={`text-xs leading-relaxed ${!n.is_read ? 'font-semibold text-gray-900' : 'text-gray-600'}`}>
+                                <p className={`text-xs leading-relaxed ${!n.is_read ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'}`}>
                                   {n.message}
                                 </p>
                                 <p className="text-[10px] text-gray-400 mt-1">
@@ -1285,7 +1285,7 @@ export default function App() {
                 <input 
                   type="text"
                   placeholder="Filter by tag..."
-                  className="flex-1 text-sm bg-white border-none focus:ring-0 font-medium text-black placeholder:text-gray-400"
+                  className="flex-1 text-sm bg-transparent border-none focus:ring-0 font-medium text-black placeholder:text-gray-400 dark:text-white"
                   value={tagFilter}
                   onChange={(e) => setTagFilter(e.target.value)}
                 />
