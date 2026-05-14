@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS tickets (
   title TEXT NOT NULL,
   description TEXT,
   category TEXT,
-  status TEXT DEFAULT 'open', -- open, assigned, in_progress, pending, completed, acknowledged
+  status TEXT DEFAULT 'open', -- open, assigned, in_progress, pending, completed, resolved
   priority TEXT DEFAULT 'medium', -- low, medium, high, critical
   created_by UUID REFERENCES users(id),
   requested_for UUID REFERENCES users(id),
@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS activities (
   id BIGSERIAL PRIMARY KEY,
   ticket_id TEXT REFERENCES tickets(id) ON DELETE CASCADE,
   user_id UUID REFERENCES users(id),
-  action TEXT NOT NULL, -- created, assigned, re-assigned, commented, status_change, update, completed, acknowledged, escalated
+  action TEXT NOT NULL, -- created, assigned, re-assigned, commented, status_change, update, completed, resolved, escalated
   details TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );

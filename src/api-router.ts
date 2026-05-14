@@ -80,7 +80,7 @@ const SLA_HOURS: Record<string, number> = {
 };
 
 function calculateSlaStatus(targetTime: string | null, status: string): 'on_track' | 'approaching' | 'breached' | 'resolved' {
-  if (status === 'completed' || status === 'acknowledged') return 'resolved';
+  if (status === 'resolved') return 'resolved';
   if (!targetTime) return 'on_track';
   
   const now = new Date();
@@ -327,7 +327,7 @@ router.get("/technicians", async (req, res) => {
     
     const formatted = (techs || []).map(t => {
       const techTickets = tickets.filter(ticket => ticket.assigned_to === t.id);
-      const resolvedTickets = techTickets.filter(ticket => ticket.status === 'completed' || ticket.status === 'acknowledged');
+      const resolvedTickets = techTickets.filter(ticket => ticket.status === 'resolved');
       
       // Calculate Avg Resolution Time (in hours)
       let totalResolutionTime = 0;
@@ -896,7 +896,7 @@ router.get("/tickets", async (req, res) => {
 
     const formattedTickets = tickets.map((t) => {
       const deps = allDeps?.filter(d => d.ticket_id === t.id) || [];
-      const isBlocked = deps.some(d => (d.ticket as any)?.status !== 'completed' && (d.ticket as any)?.status !== 'acknowledged');
+      const isBlocked = deps.some(d => (d.ticket as any)?.status !== 'completed' && (d.ticket as any)?.status !== 'resolved');
       const slaStatus = calculateSlaStatus(t.sla_target_time, t.status);
 
       return {
@@ -1179,13 +1179,13 @@ router.patch("/tickets/:id/status", async (req, res) => {
   if (userError) return handleSupabaseError(res, userError, "get_user_role");
   if (ticketError) return handleSupabaseError(res, ticketError, "get_ticket_details");
   
-  // Acknowledge is for creator
-  if (status === 'acknowledged') {
+  // Resolve is for creator
+  if (status === 'resolved') {
     if (user.role !== 'it_lead' && user.role !== 'admin' && ticket.created_by !== user_id && ticket.requested_for !== user_id) {
       return res.status(403).json({ error: "Unauthorized" });
     }
-  } else if (status === 'assigned' && (ticket.status === 'completed' || ticket.status === 'acknowledged')) {
-    // Allow creator/requester to re-open a completed or acknowledged ticket
+  } else if (status === 'assigned' && (ticket.status === 'completed' || ticket.status === 'resolved')) {
+    // Allow creator/requester to re-open a completed or resolved ticket
     if (user.role !== 'it_lead' && user.role !== 'admin' && ticket.created_by !== user_id && ticket.requested_for !== user_id && ticket.assigned_to !== user_id) {
       return res.status(403).json({ error: "Unauthorized" });
     }
@@ -1197,14 +1197,14 @@ router.patch("/tickets/:id/status", async (req, res) => {
   }
 
   // Check dependencies if trying to complete
-  if (status === 'completed' || status === 'acknowledged') {
+  if (status === 'completed' || status === 'resolved') {
     const { data: deps, error: depError } = await supabase
       .from("ticket_dependencies")
       .select("depends_on_id, ticket:tickets!ticket_dependencies_depends_on_id_fkey(status)")
       .eq("ticket_id", id);
     
     if (!depError && deps) {
-      const unresolved = deps.filter(d => (d.ticket as any)?.status !== 'completed' && (d.ticket as any)?.status !== 'acknowledged');
+      const unresolved = deps.filter(d => (d.ticket as any)?.status !== 'completed' && (d.ticket as any)?.status !== 'resolved');
       if (unresolved.length > 0) {
         return res.status(400).json({ error: "Cannot complete ticket. It has unresolved dependencies." });
       }
@@ -1219,7 +1219,7 @@ router.patch("/tickets/:id/status", async (req, res) => {
     action: "status_change",
     details: `Status updated to ${status}.`
   }]);
-  if (status === 'completed' || status === 'acknowledged') {
+  if (status === 'completed' || status === 'resolved') {
     const message = `Your ticket "${ticket.title}" has been marked as ${status}.`;
     const recipients = Array.from(new Set([ticket.created_by, ticket.requested_for]));
     for (const recipientId of recipients) {
@@ -1346,10 +1346,10 @@ router.patch("/tickets/:id/complete", async (req, res) => {
   }
 });
 
-router.patch("/tickets/:id/acknowledge", async (req, res) => {
+router.patch("/tickets/:id/resolve", async (req, res) => {
   const { id } = req.params;
   const { user_id } = req.body;
-  console.log(`PATCH /api/tickets/${id}/acknowledge - Acknowledging ticket by user ${user_id}`);
+  console.log(`PATCH /api/tickets/${id}/resolve - Resolving ticket by user ${user_id}`);
   
   try {
     const { data: user, error: userError } = await supabase.from("users").select("role").eq("id", user_id).single();
@@ -1359,31 +1359,31 @@ router.patch("/tickets/:id/acknowledge", async (req, res) => {
     if (ticketError) return handleSupabaseError(res, ticketError, "get_ticket_info");
     
     if (user.role !== 'it_lead' && user.role !== 'admin' && ticket.created_by !== user_id && ticket.requested_for !== user_id) {
-      console.warn(`User ${user_id} unauthorized to acknowledge ticket ${id}`);
-      return res.status(403).json({ error: "Unauthorized. Only the ticket creator or IT Lead can acknowledge the ticket." });
+      console.warn(`User ${user_id} unauthorized to resolve ticket ${id}`);
+      return res.status(403).json({ error: "Unauthorized. Only the ticket creator or IT Lead can resolve the ticket." });
     }
 
-    const { error: updateError } = await supabase.from("tickets").update({ status: 'acknowledged', updated_at: new Date().toISOString() }).eq("id", id);
-    if (updateError) return handleSupabaseError(res, updateError, "update_ticket_status_acknowledge");
+    const { error: updateError } = await supabase.from("tickets").update({ status: 'resolved', updated_at: new Date().toISOString() }).eq("id", id);
+    if (updateError) return handleSupabaseError(res, updateError, "update_ticket_status_resolve");
 
-    const { error: activityError } = await supabase.from("activities").insert([{ ticket_id: id, user_id, action: "acknowledged", details: "User acknowledged the resolution." }]);
-    if (activityError) return handleSupabaseError(res, activityError, "insert_acknowledge_activity");
+    const { error: activityError } = await supabase.from("activities").insert([{ ticket_id: id, user_id, action: "resolved", details: "User resolved the ticket (acknowledged resolution)." }]);
+    if (activityError) return handleSupabaseError(res, activityError, "insert_resolve_activity");
 
     if (ticket.assigned_to) {
-      const message = `User has acknowledged the resolution for ticket: ${ticket.title}`;
+      const message = `User has resolved (acknowledged resolution) for ticket: ${ticket.title}`;
       const { data: technician, error: techError } = await supabase.from("users").select("*").eq("id", ticket.assigned_to).single();
       const { data: notification, error: notifError } = await supabase.from("notifications").insert([{ user_id: ticket.assigned_to, message, ticket_id: id }]).select().single();
       if (!notifError) sendNotification(ticket.assigned_to, notification);
       if (technician && technician.email) {
-        await sendEmailNotification(technician.email, `Ticket Acknowledged: ${ticket.title}`, `<h1>Ticket Acknowledged</h1><p>Hello ${technician.name},</p><p>The user has acknowledged the resolution for ticket: <strong>${ticket.title}</strong>.</p>`);
+        await sendEmailNotification(technician.email, `Ticket Resolved: ${ticket.title}`, `<h1>Ticket Resolved</h1><p>Hello ${technician.name},</p><p>The user has acknowledged the resolution for ticket: <strong>${ticket.title}</strong> and the ticket is now formally Resolved.</p>`);
       }
     }
     
-    console.log(`Ticket ${id} acknowledged successfully`);
+    console.log(`Ticket ${id} resolved successfully`);
     res.json({ success: true });
   } catch (err: any) {
-    console.error(`Unexpected error in PATCH /api/tickets/${id}/acknowledge:`, err);
-    res.status(500).json({ error: err.message || "An unexpected error occurred while acknowledging ticket" });
+    console.error(`Unexpected error in PATCH /api/tickets/${id}/resolve:`, err);
+    res.status(500).json({ error: err.message || "An unexpected error occurred while resolving ticket" });
   }
 });
 

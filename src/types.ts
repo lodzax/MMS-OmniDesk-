@@ -8,7 +8,7 @@ export interface User {
 }
 
 export type TicketCategory = 'laptop' | 'connectivity' | 'printer' | 'software' | 'desktop' | 'mobile' | 'other';
-export type TicketStatus = 'open' | 'assigned' | 'in_progress' | 'completed' | 'acknowledged';
+export type TicketStatus = 'open' | 'assigned' | 'in_progress' | 'completed' | 'resolved';
 export type TicketPriority = 'low' | 'medium' | 'high' | 'critical';
 
 export interface Ticket {

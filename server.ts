@@ -163,8 +163,34 @@ export async function startServer() {
     });
   }
 
-  server.listen(PORT, "0.0.0.0", () => {
+  server.listen(PORT, "0.0.0.0", async () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    
+    // One-time data migration: acknowledged -> resolved
+    try {
+      console.log("Running one-time data migration: acknowledged -> resolved");
+      
+      const { data: tickets, error: tError } = await supabase
+        .from("tickets")
+        .update({ status: 'resolved' })
+        .eq("status", 'acknowledged')
+        .select();
+        
+      if (tError) console.error("Ticket migration error:", tError);
+      else if (tickets && tickets.length > 0) console.log(`Migrated ${tickets.length} tickets to 'resolved' status.`);
+      
+      const { data: activities, error: aError } = await supabase
+        .from("activities")
+        .update({ action: 'resolved' })
+        .eq("action", 'acknowledged')
+        .select();
+        
+      if (aError) console.error("Activity migration error:", aError);
+      else if (activities && activities.length > 0) console.log(`Migrated ${activities.length} activity logs to 'resolved' action.`);
+      
+    } catch (migrateError) {
+      console.error("Migration error:", migrateError);
+    }
   });
 }
 

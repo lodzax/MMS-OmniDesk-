@@ -69,11 +69,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const metrics = useMemo(() => {
     const total = filteredTickets.length;
     const completed = filteredTickets.filter(t => t.status === 'completed').length;
-    const acknowledged = filteredTickets.filter(t => t.status === 'acknowledged').length;
+    const resolved = filteredTickets.filter(t => t.status === 'resolved').length;
     const pending = filteredTickets.filter(t => t.status === 'open' || t.status === 'assigned' || t.status === 'in_progress').length;
     const escalated = filteredTickets.filter(t => t.is_escalated).length;
     
-    return { total, completed, acknowledged, pending, escalated };
+    return { total, completed, resolved, pending, escalated };
   }, [filteredTickets]);
 
   const categoryData = useMemo(() => {
@@ -103,7 +103,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }, [filteredTickets]);
 
   const statusData = useMemo(() => {
-    const counts: Record<string, number> = { open: 0, assigned: 0, in_progress: 0, completed: 0, acknowledged: 0 };
+    const counts: Record<string, number> = { open: 0, assigned: 0, in_progress: 0, completed: 0, resolved: 0 };
     filteredTickets.forEach(t => {
       counts[t.status] = (counts[t.status] || 0) + 1;
     });
@@ -176,8 +176,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
         ['Metric', 'Count'],
         ['Total Tickets', metrics.total.toString()],
         ['Pending Tickets', metrics.pending.toString()],
-        ['Completed Tickets', metrics.completed.toString()],
-        ['Acknowledged Tickets', metrics.acknowledged.toString()],
+        ['Completed (Fix Confirmed)', metrics.completed.toString()],
+        ['Resolved (User Acknowledged)', metrics.resolved.toString()],
       ];
 
       autoTable(doc, {
@@ -439,7 +439,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <option value="assigned">Assigned</option>
             <option value="in_progress">In Progress</option>
             <option value="completed">Completed</option>
-            <option value="acknowledged">Acknowledged</option>
+            <option value="resolved">Resolved</option>
           </select>
 
           <select 
@@ -536,8 +536,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
           trendUp={true}
         />
         <MetricCard 
-          title="Acknowledged" 
-          value={metrics.acknowledged} 
+          title="Fully Resolved" 
+          value={metrics.resolved} 
           icon={AlertCircle} 
           color="blue" 
           trend="-2%" 
@@ -567,7 +567,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <h3 className="font-bold text-rose-900 dark:text-rose-300">Active Escalations</h3>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {tickets.filter(t => t.is_escalated && t.status !== 'completed' && t.status !== 'acknowledged').slice(0, 6).map(ticket => (
+            {tickets.filter(t => t.is_escalated && t.status !== 'completed' && t.status !== 'resolved').slice(0, 6).map(ticket => (
               <div 
                 key={ticket.id}
                 onClick={() => handleChartClick('status', ticket.status)}

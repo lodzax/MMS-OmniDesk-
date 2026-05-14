@@ -694,10 +694,10 @@ export default function App() {
     });
   };
 
-  const handleAcknowledge = async (ticketId: string) => {
+  const handleResolve = async (ticketId: string) => {
     if (!currentUser) return;
     try {
-      const response = await fetch(`/api/tickets/${ticketId}/acknowledge`, {
+      const response = await fetch(`/api/tickets/${ticketId}/resolve`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -707,14 +707,14 @@ export default function App() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        const errorMsg = typeof errorData.error === 'object' ? JSON.stringify(errorData.error) : (errorData.error || 'Failed to acknowledge ticket');
+        const errorMsg = typeof errorData.error === 'object' ? JSON.stringify(errorData.error) : (errorData.error || 'Failed to resolve ticket');
         throw new Error(errorMsg);
       }
 
       fetchTickets();
-      if (selectedTicket?.id === ticketId) setSelectedTicket(prev => prev ? { ...prev, status: 'acknowledged' } : null);
+      if (selectedTicket?.id === ticketId) setSelectedTicket(prev => prev ? { ...prev, status: 'resolved' } : null);
     } catch (err: any) {
-      console.error('Error acknowledging ticket:', err);
+      console.error('Error resolving ticket:', err);
       alert(`Error: ${err.message}`);
     }
   };
@@ -819,7 +819,7 @@ export default function App() {
   const canEscalate = (ticket: Ticket) => {
     if (!currentUser) return false;
     if (ticket.is_escalated) return false;
-    if (ticket.status === 'completed' || ticket.status === 'acknowledged') return false;
+    if (ticket.status === 'completed' || ticket.status === 'resolved') return false;
     
     if (currentUser.role === 'it_lead' || currentUser.role === 'admin') return true;
     
@@ -920,7 +920,7 @@ export default function App() {
       case 'assigned': return 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800';
       case 'in_progress': return 'bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800';
       case 'completed': return 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800';
-      case 'acknowledged': return 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700';
+      case 'resolved': return 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700';
       default: return 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700';
     }
   };
@@ -1125,7 +1125,7 @@ export default function App() {
                               if (ticket) {
                                 setSelectedTicket(ticket);
                                 setIsEditingDetail(false);
-                                setIsResolutionExpanded(ticket.status === 'completed' || ticket.status === 'acknowledged');
+                                setIsResolutionExpanded(ticket.status === 'completed' || ticket.status === 'resolved');
                               }
                               setShowNotifications(false);
                             }}
@@ -1252,7 +1252,7 @@ export default function App() {
                   <option value="assigned">Assigned</option>
                   <option value="in_progress">In Progress</option>
                   <option value="completed">Completed</option>
-                  <option value="acknowledged">Acknowledged</option>
+                  <option value="resolved">Resolved</option>
                 </select>
               </div>
 
@@ -1359,7 +1359,7 @@ export default function App() {
                     onClick={() => {
                       setSelectedTicket(ticket);
                       setIsEditingDetail(false);
-                      setIsResolutionExpanded(ticket.status === 'completed' || ticket.status === 'acknowledged');
+                      setIsResolutionExpanded(ticket.status === 'completed' || ticket.status === 'resolved');
                     }}
                     className={`p-4 rounded-2xl border transition-all cursor-pointer group relative overflow-hidden ${
                       selectedTicket?.id === ticket.id 
@@ -1862,7 +1862,7 @@ export default function App() {
                               Escalated
                             </span>
                           )}
-                          {dependencies.some(d => d.ticket?.status !== 'completed' && d.ticket?.status !== 'acknowledged') && (
+                          {dependencies.some(d => d.ticket?.status !== 'completed' && d.ticket?.status !== 'resolved') && (
                             <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border border-amber-600 bg-amber-600 text-white flex items-center gap-1">
                               <ShieldCheck className="w-3 h-3" />
                               Blocked
@@ -1923,7 +1923,7 @@ export default function App() {
                               {formatDistanceToNow(new Date(selectedTicket.created_at), { addSuffix: true })}
                             </span>
                           </div>
-                          {selectedTicket.sla_target_time && selectedTicket.status !== 'completed' && selectedTicket.status !== 'acknowledged' && (
+                          {selectedTicket.sla_target_time && selectedTicket.status !== 'completed' && selectedTicket.status !== 'resolved' && (
                             <div className="flex items-center gap-1.5">
                               <AlertCircle className={`w-4 h-4 ${selectedTicket.sla_status === 'breached' ? 'text-red-500' : 'text-amber-500'}`} />
                               <span className="font-medium">
@@ -1959,7 +1959,7 @@ export default function App() {
                       )}
 
                       {/* Lead/Technician Controls: Assign */}
-                      {(currentUser.role === 'it_lead' || currentUser.role === 'admin' || currentUser.role === 'technician') && (selectedTicket.status === 'open' || selectedTicket.status === 'assigned' || selectedTicket.status === 'acknowledged') && (
+                      {(currentUser.role === 'it_lead' || currentUser.role === 'admin' || currentUser.role === 'technician') && (selectedTicket.status === 'open' || selectedTicket.status === 'assigned' || selectedTicket.status === 'resolved') && (
                         <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 dark:bg-indigo-900/10 dark:border-indigo-900/30">
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-indigo-600 mb-2 dark:text-indigo-400">
                             {selectedTicket.assigned_to ? 'Re-assign Technician' : 'Assign Technician'}
@@ -1994,7 +1994,7 @@ export default function App() {
                     )}
 
                     {/* Resolution Details Section */}
-                    {(selectedTicket.status === 'completed' || selectedTicket.status === 'acknowledged' || activities.some(a => a.action === 'update' && a.details !== 'Ticket details updated.')) && (
+                    {(selectedTicket.status === 'completed' || selectedTicket.status === 'resolved' || activities.some(a => a.action === 'update' && a.details !== 'Ticket details updated.')) && (
                       <div className="mb-8 p-6 rounded-2xl bg-indigo-50/50 border border-indigo-100 dark:bg-indigo-900/10 dark:border-indigo-900/30">
                         <button 
                           onClick={() => setIsResolutionExpanded(!isResolutionExpanded)}
@@ -2021,10 +2021,10 @@ export default function App() {
                             >
                               <div className="pt-4 space-y-4">
                                 {activities
-                                  .filter(a => (a.action === 'update' && a.details !== 'Ticket details updated.') || a.action === 'completed' || a.action === 'acknowledged')
+                                  .filter(a => (a.action === 'update' && a.details !== 'Ticket details updated.') || a.action === 'completed' || a.action === 'resolved')
                                   .length > 0 ? (
                                     activities
-                                      .filter(a => (a.action === 'update' && a.details !== 'Ticket details updated.') || a.action === 'completed' || a.action === 'acknowledged')
+                                      .filter(a => (a.action === 'update' && a.details !== 'Ticket details updated.') || a.action === 'completed' || a.action === 'resolved')
                                       .map((activity) => (
                                         <div key={activity.id} className="p-3 bg-white rounded-xl border border-indigo-100/50 shadow-sm dark:bg-gray-900 dark:border-indigo-900/20">
                                           <div className="flex items-center justify-between mb-1">
@@ -2099,7 +2099,7 @@ export default function App() {
                           {dependencies.map(dep => (
                             <div key={dep.id} className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-200 dark:bg-gray-900 dark:border-gray-700">
                               <div className="flex items-center gap-3 overflow-hidden">
-                                <span className={`flex-shrink-0 w-2 h-2 rounded-full ${dep.ticket?.status === 'completed' || dep.ticket?.status === 'acknowledged' ? 'bg-green-500' : 'bg-amber-500'}`}></span>
+                                <span className={`flex-shrink-0 w-2 h-2 rounded-full ${dep.ticket?.status === 'completed' || dep.ticket?.status === 'resolved' ? 'bg-green-500' : 'bg-amber-500'}`}></span>
                                 <div className="truncate">
                                   <p className="text-sm font-medium truncate dark:text-gray-200">{dep.ticket?.title}</p>
                                   <p className="text-[10px] text-gray-400 font-mono">#{dep.depends_on_id} • {dep.ticket?.status}</p>
@@ -2171,7 +2171,7 @@ export default function App() {
                             <option value="assigned">Assigned</option>
                             <option value="in_progress">In Progress</option>
                             <option value="completed">Completed</option>
-                            <option value="acknowledged">Acknowledged</option>
+                            <option value="resolved">Resolved (Final)</option>
                           </select>
                         </div>
                         <div>
@@ -2235,8 +2235,8 @@ export default function App() {
                     </motion.div>
                   )}
 
-                  {/* User Controls: Acknowledge / Re-open */}
-                  {(currentUser.role === 'it_lead' || currentUser.role === 'admin' || (selectedTicket.created_by === currentUser.id || selectedTicket.requested_for === currentUser.id)) && (selectedTicket.status === 'completed' || selectedTicket.status === 'acknowledged') && (
+                  {/* User Controls: Resolve / Re-open */}
+                  {(currentUser.role === 'it_lead' || currentUser.role === 'admin' || (selectedTicket.created_by === currentUser.id || selectedTicket.requested_for === currentUser.id)) && (selectedTicket.status === 'completed' || selectedTicket.status === 'resolved') && (
                     <motion.div 
                       initial={{ opacity: 0, scale: 0.98 }}
                       animate={{ opacity: 1, scale: 1 }}
@@ -2247,27 +2247,27 @@ export default function App() {
                           {selectedTicket.status === 'completed' ? (
                             <CheckCircle2 className="w-6 h-6 text-green-600 dark:text-green-400" />
                           ) : (
-                            <Inbox className="w-6 h-6 text-gray-600 dark:text-gray-400" />
+                            <CheckCircle2 className="w-6 h-6 text-gray-600 dark:text-gray-400" />
                           )}
                         </div>
                         <div>
                           <h3 className={`text-lg font-bold ${selectedTicket.status === 'completed' ? 'text-green-900 dark:text-green-300' : 'text-gray-900 dark:text-gray-300'}`}>
-                            {selectedTicket.status === 'completed' ? 'Problem Resolved?' : 'Ticket Closed'}
+                            {selectedTicket.status === 'completed' ? 'Problem Resolved?' : 'Ticket Resolved'}
                           </h3>
                           <p className={`text-sm ${selectedTicket.status === 'completed' ? 'text-green-700 dark:text-green-400/80' : 'text-gray-600 dark:text-gray-400/80'}`}>
                             {selectedTicket.status === 'completed' 
-                              ? "The technician has marked this issue as fixed. Please review the resolution and acknowledge if you are satisfied."
-                              : "This ticket has been acknowledged and closed. If the problem persists, you can re-open it."}
+                              ? "The technician has marked this issue as fixed. Please review the resolution and resolve the ticket if you are satisfied."
+                              : "This ticket has been formally resolved and closed. If the problem persists, you can re-open it."}
                           </p>
                         </div>
                       </div>
                       <div className="flex flex-col sm:flex-row gap-3">
                         {selectedTicket.status === 'completed' && (
                           <button 
-                            onClick={() => handleAcknowledge(selectedTicket.id)}
+                            onClick={() => handleResolve(selectedTicket.id)}
                             className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-200 dark:shadow-none"
                           >
-                            Acknowledge Resolution
+                            Resolve Ticket
                           </button>
                         )}
                         <button 
@@ -2288,7 +2288,7 @@ export default function App() {
                       </div>
 
                       {/* Rating Section */}
-                      {(selectedTicket.status === 'completed' || selectedTicket.status === 'acknowledged') && 
+                      {(selectedTicket.status === 'completed' || selectedTicket.status === 'resolved') && 
                        (selectedTicket.created_by === currentUser.id || selectedTicket.requested_for === currentUser.id) && (
                         <div className="mt-8 pt-8 border-t border-gray-100 dark:border-gray-800">
                           <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-4">How would you rate the resolution?</h4>
@@ -2365,6 +2365,7 @@ export default function App() {
                           {activities.map((activity, idx) => (
                             <div key={activity.id} className="relative flex items-start gap-6 group">
                               <div className={`mt-1.5 w-10 h-10 rounded-full border-4 border-white flex items-center justify-center shadow-sm z-10 shrink-0 dark:border-[#1C1C1E] ${
+                                activity.action === 'resolved' ? 'bg-green-600' :
                                 activity.action === 'completed' ? 'bg-green-500' : 
                                 activity.action === 'assigned' || activity.action === 're-assigned' ? 'bg-amber-500' :
                                 activity.action === 'created' ? 'bg-blue-500' : 
@@ -2373,7 +2374,8 @@ export default function App() {
                                 activity.action === 'status_change' ? 'bg-slate-500' :
                                 'bg-indigo-500'
                               }`}>
-                                {activity.action === 'completed' ? <CheckCircle2 className="w-4 h-4 text-white" /> : 
+                                {activity.action === 'resolved' ? <CheckCircle2 className="w-4 h-4 text-white" /> :
+                                 activity.action === 'completed' ? <CheckCircle2 className="w-4 h-4 text-white" /> : 
                                  activity.action === 'assigned' || activity.action === 're-assigned' ? <UserIcon className="w-4 h-4 text-white" /> :
                                  activity.action === 'created' ? <Plus className="w-4 h-4 text-white" /> : 
                                  activity.action === 'commented' ? <MessageSquare className="w-4 h-4 text-white" /> : 
